@@ -566,14 +566,18 @@ def update_table1(ws, t1):
 
 def update_table2(ws, t2):
     """경영팀 표2 시트 업데이트"""
+    # 실제 집계 대상 컬럼만 col_idx에 포함 (옆 테이블 컬럼 제외)
+    VALID_COL_NAMES = {'GW+ICU', 'GW', 'ICU', '응급실재원'} | set(WARD_TO_COL.values()) | ICU_COLS
+
     col_idx = {}
     header_row_num = 2
     for i, row in enumerate(ws.iter_rows(min_row=1, max_row=5, values_only=True), 1):
         if row[1] and '주치의' in str(row[1]):
             header_row_num = i
             for j, v in enumerate(row):
-                if v and str(v).strip():
-                    col_idx[str(v).strip()] = j + 1
+                nm = str(v).strip() if v else ''
+                if nm and (nm in ('진료과', '주치의') or nm in VALID_COL_NAMES):
+                    col_idx[nm] = j + 1
             break
 
     if not col_idx:
@@ -599,15 +603,14 @@ def update_table2(ws, t2):
                 ws.cell(row[0].row, col_num).value = counts.get(col_name, 0)
             elif col_name == '응급실재원':
                 ws.cell(row[0].row, col_num).value = counts.get('응급실재원', 0)
-            elif col_name in WARD_TO_COL.values() or col_name in ICU_COLS:
+            elif col_name in VALID_COL_NAMES:
                 ws.cell(row[0].row, col_num).value = counts.get(col_name, 0)
 
     print("  표2: {}명 의사 업데이트 완료".format(updated))
 
     # ── 합계 행 직접 계산 (SUM 공식 의존 제거) ──────────────────────────
-    # 과별(진료과) 합계를 직접 집계해서 '합계' 텍스트가 있는 행에 기록
     dept_col = col_idx.get('진료과', 1)
-    sum_cols  = [cn for cn in col_idx if cn not in ('진료과', '주치의')]
+    sum_cols = [cn for cn in col_idx if cn not in ('진료과', '주치의')]
 
     # 1) 일반 의사 행에서 과별 합계 누적
     dept_sums = defaultdict(lambda: defaultdict(int))
@@ -619,12 +622,12 @@ def update_table2(ws, t2):
         dept = str(dept_cell).strip()
         doc  = str(doc_cell).strip()
         if doc not in t2:
-                       continue
+            continue
         counts = t2[doc]
         for cn in sum_cols:
             dept_sums[dept][cn] += counts.get(cn, 0)
 
-    # 2) '합계' 행 찾아서 기록 (A열·B열 둘 다 검사 - 병합셀 대응)
+    # 2) '합계' 행 찾아서 기록 (총합계 포함)
     for row in ws.iter_rows(min_row=header_row_num + 1):
         label = ''
         for ci in range(min(3, len(row))):
@@ -634,13 +637,24 @@ def update_table2(ws, t2):
                 break
         if not label:
             continue
-        dept_name = label.replace(' 합계', '').strip()
-        if dept_name not in dept_sums:
-            continue
-        sums = dept_sums[dept_name]
-        for cn, col_num in col_idx.items():
-            if cn in sum_cols:
-                ws.cell(row[0].row, col_num).value = sums.get(cn, 0)
+
+        if '총합계' in label or '총 합계' in label:
+            # 전체 합계: 모든 과 dept_sums 합산
+            all_sums = defaultdict(int)
+            for ds in dept_sums.values():
+                for cn, val in ds.items():
+                    all_sums[cn] += val
+            for cn, col_num in col_idx.items():
+                if cn in sum_cols:
+                    ws.cell(row[0].row, col_num).value = all_sums.get(cn, 0)
+        else:
+            dept_name = label.replace(' 합계', '').strip()
+            if dept_name not in dept_sums:
+                continue
+            sums = dept_sums[dept_name]
+            for cn, col_num in col_idx.items():
+                if cn in sum_cols:
+                    ws.cell(row[0].row, col_num).value = sums.get(cn, 0)
 
 
 def fix_column_widths(ws):
