@@ -691,6 +691,20 @@ def update_table2(ws, t2):
             for cn, col_num in col_idx.items():
                 if cn in sum_cols:
                     ws.cell(row[0].row, col_num).value = all_sums.get(cn, 0)
+
+            # ── 병동별 병상가동율% 행 (총합계 바로 아래) ─────────────────
+            # 수식 셀 대신 직접 계산값으로 대체
+            WARD_BEDS = {
+                '18층1병동': 44, '18층2병동': 44, '19층1병동': 39,
+                '19층2병동': 44, '20층1병동': 32, '20층2병동': 36,
+                '혈액계중환자실': 5,
+            }
+            util_row_num = row[0].row + 1
+            for ward, beds in WARD_BEDS.items():
+                col_num = col_idx.get(ward)
+                if col_num and beds:
+                    rate = round(all_sums.get(ward, 0) / beds * 100, 2)
+                    ws.cell(util_row_num, col_num).value = rate
         else:
             dept_name = label.replace(' 합계', '').strip()
             if dept_name not in dept_sums:
