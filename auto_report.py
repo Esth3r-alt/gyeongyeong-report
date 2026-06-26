@@ -630,6 +630,7 @@ def update_table2(ws, t2):
 
     doc_col = col_idx.get('주치의', 2)
     updated = 0
+    _all_sums_cache = {}
 
     for row in ws.iter_rows(min_row=header_row_num + 1):
         cell_val = row[doc_col - 1].value
@@ -692,19 +693,8 @@ def update_table2(ws, t2):
                 if cn in sum_cols:
                     ws.cell(row[0].row, col_num).value = all_sums.get(cn, 0)
 
-            # ── 병동별 병상가동율% 행 (총합계 바로 아래) ─────────────────
-            # 수식 셀 대신 직접 계산값으로 대체
-            WARD_BEDS = {
-                '18층1병동': 44, '18층2병동': 44, '19층1병동': 39,
-                '19층2병동': 44, '20층1병동': 32, '20층2병동': 36,
-                '혈액계중환자실': 5,
-            }
-            util_row_num = row[0].row + 1
-            for ward, beds in WARD_BEDS.items():
-                col_num = col_idx.get(ward)
-                if col_num and beds:
-                    rate = round(all_sums.get(ward, 0) / beds * 100, 2)
-                    ws.cell(util_row_num, col_num).value = rate
+            # ── 병동별 병상가동율% 는 아래 별도 루프에서 처리 ─────────────
+            _all_sums_cache.update(all_sums)
         else:
             dept_name = label.replace(' 합계', '').strip()
             if dept_name not in dept_sums:
@@ -713,6 +703,24 @@ def update_table2(ws, t2):
             for cn, col_num in col_idx.items():
                 if cn in sum_cols:
                     ws.cell(row[0].row, col_num).value = sums.get(cn, 0)
+
+    # ── 병동별 병상가동율% 행: '병동별' 텍스트 스캔해서 직접 값 쓰기 ──────
+    WARD_BEDS = {
+        '18층1병동': 44, '18층2병동': 44, '19층1병동': 39,
+        '19층2병동': 44, '20층1병동': 32, '20층2병동': 36,
+        '혈액계중환자실': 5,
+    }
+    all_sums = _all_sums_cache
+    for row in ws.iter_rows(min_row=header_row_num + 1, max_row=header_row_num + 40):
+        a = str(row[0].value or '').strip()
+        if '병동별' in a and '병상가동율' in a:
+            for ward, beds in WARD_BEDS.items():
+                col_num = col_idx.get(ward)
+                if col_num and beds:
+                    rate = round(all_sums.get(ward, 0) / beds * 100, 2)
+                    ws.cell(row[0].row, col_num).value = rate
+            print("  병동별 병상가동율 업데이트 완료 (행 {})".format(row[0].row))
+            break
 
 
 def fix_column_widths(ws):
@@ -746,45 +754,32 @@ def _delete_other_hospital_cols(ws):
         ws.delete_cols(col_idx)
 
 
+
 def update_disease_table(ws, disease_counts):
-    """표2 오른쪽 담당질환 테이블 업데이트 (col 43=레이블, col 44=환자수)"""
     DISEASE_KEYS = {'AML', 'ALL', 'BMF/MPN', 'MM', 'Lymphoma', 'Infection', '중환자실'}
     for row in ws.iter_rows(min_row=1, max_row=50):
         if len(row) < 43:
             continue
-        lbl = str(row[42].value or '').strip()  # col 43 = index 42
+        lbl = str(row[42].value or '').strip()
         if lbl in DISEASE_KEYS:
             ws.cell(row[42].row, 44).value = disease_counts.get(lbl, 0)
-    print("  담당질환 테이블 업데이트 완료: {}".format(
-        {k: v for k, v in disease_counts.items()}))
+    print("  담당질환 테이블 완료: {}".format(disease_counts))
 
 
 def create_clean_excel(t1, t2, template_path, output_path, data=None):
-    """
-    서울성모 전용 깔끔한 Excel 생성
-    - 표1, 표2 시트만 (취합본·우선순위 분석 제거)
-    - 타 병원 컬럼(은평·여의도·인천) 완전 삭제
-    - 모든 값을 수식 없이 숫자로 작성
-    """
     import shutil
     shutil.copy2(template_path, output_path)
     wb = openpyxl.load_workbook(output_path)
-
-    # 표1·표2 외 시트 삭제
     keep = {name for name in wb.sheetnames if '표1' in name or '표2' in name}
     for name in list(wb.sheetnames):
         if name not in keep:
             del wb[name]
-
-    # 표1 업데이트 + 타 병원 컬럼 삭제
     for name in list(wb.sheetnames):
         if '표1' in name:
             ws = wb[name]
             update_table1(ws, t1)
             _delete_other_hospital_cols(ws)
             break
-
-    # 표2 업데이트 + 담당질환 테이블
     for name in list(wb.sheetnames):
         if '표2' in name:
             ws = wb[name]
@@ -793,7 +788,6 @@ def create_clean_excel(t1, t2, template_path, output_path, data=None):
                 disease_counts = calculate_disease_counts(data)
                 update_disease_table(ws, disease_counts)
             break
-
     wb.save(output_path)
 
 
@@ -802,39 +796,17 @@ def write_output(template_path, t1, t2, output_path):
     shutil.copy2(template_path, output_path)
     wb = openpyxl.load_workbook(output_path)
     names = wb.sheetnames
-    print("  시트: {}".format(names))
-
     for name in names:
         if '표1' in name:
-            print("  [표1] '{}' 업데이트 중...".format(name))
             update_table1(wb[name], t1)
-            fix_column_widths(wb[name])
             break
-
     for name in names:
         if '표2' in name:
-            print("  [표2] '{}' 업데이트 중...".format(name))
             update_table2(wb[name], t2)
-            fix_column_widths(wb[name])
             break
-
     wb.save(output_path)
-    print("저장 완료: {}".format(output_path))
+    print("done: {}".format(output_path))
 
-
-# =============================================================================
-# 5. MAIN
-# =============================================================================
-
-
-# =============================================================================
-# 5. MAIN
-# =============================================================================
-
-
-# =============================================================================
-# 5. MAIN
-# =============================================================================
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -848,36 +820,20 @@ def main():
         zip_path = sys.argv[1]
         if not os.path.isabs(zip_path):
             zip_path = os.path.join(script_dir, zip_path)
-
     template_path = find_template(script_dir)
     if not template_path:
         print("[ERROR] template not found")
         sys.exit(1)
-
     output_path = sys.argv[2] if len(sys.argv) >= 3 else None
     if output_path and not os.path.isabs(output_path):
         output_path = os.path.join(script_dir, output_path)
-
-    print("[1] Loading data...")
     data = load_all_data(zip_path)
-
     if output_path is None:
         ds = data['report_date'].strftime('%Y%m%d')
         output_path = os.path.join(script_dir, "report_{}.xlsx".format(ds))
-
-    print("[2] Table1...")
     t1 = calculate_table1(data)
-    s = t1['seoul']
-    print("  total={} transplant={} sterile={} gen_ded={} prev_adm={} prev_dis={} bmt={}".format(
-        s['total'], s['transplant'], s['sterile'], s['gen_ded'],
-        s['prev_adm'], s['prev_dis'], s['bmt']))
-
-    print("[3] Table2...")
     t2 = calculate_table2(data)
-    print("  {} doctors".format(len(t2)))
-
-    print("[4] Saving...")
-    create_clean_excel(t1, t2, template_path, output_path)
+    create_clean_excel(t1, t2, template_path, output_path, data=data)
     print("Done:", output_path)
 
 
