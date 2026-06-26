@@ -141,7 +141,7 @@ with st.spinner("데이터 처리 중..."):
                 output_filename = "경영팀_일일현황_{}.xlsx".format(ds)
                 output_path = os.path.join(tmpdir, output_filename)
 
-                create_clean_excel(t1, t2, template_path, output_path)
+                create_clean_excel(t1, t2, template_path, output_path, data=data)
 
                 with open(output_path, "rb") as ef:
                     excel_bytes = ef.read()

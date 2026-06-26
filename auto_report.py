@@ -433,6 +433,50 @@ def calculate_table1(data):
 # 3. 경영팀 표2 계산
 # =============================================================================
 
+def calculate_disease_counts(data):
+    """내과 입전의 담당질환별 환자 수 (표2 오른쪽 테이블)"""
+    EXCLUDE_DOCS = {'임진조'}
+    counts = {'AML': 0, 'ALL': 0, 'BMF/MPN': 0, 'MM': 0, 'Lymphoma': 0, 'Infection': 0, '중환자실': 0}
+
+    for r in data['file1']:
+        if not r[0]:
+            continue
+        dept = str(r[10]).strip()
+        doc  = str(r[11]).strip() if r[11] else ''
+        ward = str(r[12]).strip() if r[12] else ''
+        diag = str(r[1]).strip()  if len(r) > 1 and r[1] else ''
+
+        if doc in EXCLUDE_DOCS:
+            continue
+        if '기증자' in diag or '이식 상태' in diag:
+            continue
+
+        if dept == '혈액내과' and ward in SEOUL_INPATIENT_WARDS:
+            d = diag
+            if ward == '혈액계중환자실':
+                counts['중환자실'] += 1
+            elif (('골수성 백혈병' in d and '만성' not in d)
+                  or '골수모구성' in d or '골수단구성' in d or '전골수구성' in d
+                  or ('골수성 육종' in d and '림프' not in d)):
+                counts['AML'] += 1
+            elif ('림프모구성' in d or '림프모세포' in d or '버킷' in d
+                  or ('전구물질' in d and '림프' in d)):
+                counts['ALL'] += 1
+            elif any(k in d for k in ['형성이상', '골수섬유증', '재생불량성', '저형성빈혈',
+                                       '만성 골수성', '진성적혈구', '혈소판증가']):
+                counts['BMF/MPN'] += 1
+            elif any(k in d for k in ['골수종', '아밀로이드', '형질모세포']):
+                counts['MM'] += 1
+            else:
+                # 나머지 혈액내과 (림프종, CLL, 조직구성, 기타 신생물 등)
+                counts['Lymphoma'] += 1
+
+        elif dept == '감염내과' and doc in INFEC_DOCS_SEOUL and ward in SEOUL_INPATIENT_WARDS:
+            counts['Infection'] += 1
+
+    return counts
+
+
 def calculate_table2(data):
     """의사별·병동별 환자수 집계"""
     # 환자번호 -> 전문의 역인덱스 (응급환자 교차조회용)
@@ -688,7 +732,20 @@ def _delete_other_hospital_cols(ws):
         ws.delete_cols(col_idx)
 
 
-def create_clean_excel(t1, t2, template_path, output_path):
+def update_disease_table(ws, disease_counts):
+    """표2 오른쪽 담당질환 테이블 업데이트 (col 43=레이블, col 44=환자수)"""
+    DISEASE_KEYS = {'AML', 'ALL', 'BMF/MPN', 'MM', 'Lymphoma', 'Infection', '중환자실'}
+    for row in ws.iter_rows(min_row=1, max_row=50):
+        if len(row) < 43:
+            continue
+        lbl = str(row[42].value or '').strip()  # col 43 = index 42
+        if lbl in DISEASE_KEYS:
+            ws.cell(row[42].row, 44).value = disease_counts.get(lbl, 0)
+    print("  담당질환 테이블 업데이트 완료: {}".format(
+        {k: v for k, v in disease_counts.items()}))
+
+
+def create_clean_excel(t1, t2, template_path, output_path, data=None):
     """
     서울성모 전용 깔끔한 Excel 생성
     - 표1, 표2 시트만 (취합본·우선순위 분석 제거)
@@ -713,11 +770,14 @@ def create_clean_excel(t1, t2, template_path, output_path):
             _delete_other_hospital_cols(ws)
             break
 
-    # 표2 업데이트 + 열 너비 조정
+    # 표2 업데이트 + 담당질환 테이블
     for name in list(wb.sheetnames):
         if '표2' in name:
             ws = wb[name]
             update_table2(ws, t2)
+            if data is not None:
+                disease_counts = calculate_disease_counts(data)
+                update_disease_table(ws, disease_counts)
             break
 
     wb.save(output_path)
