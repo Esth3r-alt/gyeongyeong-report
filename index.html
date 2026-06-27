@@ -220,6 +220,7 @@ body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--b
 <!-- Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
 <script>
 /* ================================================================
@@ -735,20 +736,29 @@ async function downloadExcel() {
     const resp = await fetch('./template.xlsx');
     if (!resp.ok) throw new Error('template.xlsx 없음. 저장소 루트에 template.xlsx 파일이 필요합니다.');
     const buf = await resp.arrayBuffer();
-    const wb  = XLSX.read(buf, { type:'array', cellDates:true });
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
 
     const m  = GLOBAL.metrics;
     const rd = GLOBAL.data.reportDate;
 
-    // 표1 업데이트
-    const ws1name = wb.SheetNames.find(n => n.includes('표1'));
-    if (ws1name) updateSheet1(wb.Sheets[ws1name], m, rd);
+    const ws1 = wb.worksheets.find(w => w.name.includes('표1'));
+    if (ws1) updateSheet1(ws1, m, rd);
 
-    // 표2 업데이트
-    const ws2name = wb.SheetNames.find(n => n.includes('표2'));
-    if (ws2name) updateSheet2(wb.Sheets[ws2name], m);
+    const ws2 = wb.worksheets.find(w => w.name.includes('표2'));
+    if (ws2) updateSheet2(ws2, m);
 
-    XLSX.writeFile(wb, `경영팀_일일현황_${fmtDs(rd)}.xlsx`);
+    const outBuf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([outBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `경영팀_일일현황_${fmtDs(rd)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   } catch(err) {
     showStatus('err', 'Excel 오류: ' + err.message);
     alert(err.message);
@@ -761,16 +771,12 @@ async function downloadExcel() {
   }
 }
 
-function cellSet(ws, r, c, v) {
-  const addr = XLSX.utils.encode_cell({r, c});
-  if (!ws[addr]) ws[addr] = {};
-  ws[addr].v = v;
-  ws[addr].t = typeof v === 'number' ? 'n' : (v instanceof Date ? 'd' : 's');
-  if (typeof v === 'number') ws[addr].z = '0.00';
+/* ExcelJS 기반 — 값만 변경, 서식(색/병합/폰트) 완전 보존 */
+function exSetVal(ws, rowNum, colNum, v) {
+  ws.getCell(rowNum, colNum).value = v;
 }
 
 function updateSheet1(ws, m, rd) {
-  const range = XLSX.utils.decode_range(ws['!ref']||'A1');
   const LABELS = {
     '전체 입원환자 수':           m.total,
     '전용대비 입원환자 가동율(%)': m.total_rate,
@@ -791,119 +797,107 @@ function updateSheet1(ws, m, rd) {
   };
   let txSec = false, stSec = false;
 
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    const cA = ws[XLSX.utils.encode_cell({r,c:0})];
-    const cB = ws[XLSX.utils.encode_cell({r,c:1})];
-    const vA = cA ? s(cA.v) : '';
-    const vB = cB ? s(cB.v) : '';
+  ws.eachRow((row, r) => {
+    const vA = s(row.getCell(1).value);
+    const vB = s(row.getCell(2).value);
 
-    if (vA.includes('이식')) txSec=true;
-    if (vA.includes('무균')) stSec=true;
+    if (vA.includes('이식')) txSec = true;
+    if (vA.includes('무균')) stSec = true;
     if (vA === '응급실' || vA.includes('기타')) { txSec=false; stSec=false; }
 
-    // 응급실 행: A열='응급실', B열='응급실'
-    if (vA === '응급실' && vB === '응급실') { cellSet(ws, r, 2, m.er); continue; }
+    if (vA === '응급실' && vB === '응급실') { exSetVal(ws, r, 3, m.er); return; }
 
     if (vB === '입원환자 수') {
-      if (txSec) cellSet(ws, r, 2, m.transplant);
-      else if (stSec) cellSet(ws, r, 2, m.sterile);
+      if (txSec) exSetVal(ws, r, 3, m.transplant);
+      else if (stSec) exSetVal(ws, r, 3, m.sterile);
     }
-    if (LABELS[vB] !== undefined) cellSet(ws, r, 2, LABELS[vB]);
-  }
+    if (LABELS[vB] !== undefined) exSetVal(ws, r, 3, LABELS[vB]);
+  });
 }
 
 function updateSheet2(ws, m) {
-  const range = XLSX.utils.decode_range(ws['!ref']||'A1');
-  // 헤더 행 찾기 (주치의 포함 행)
+  // 헤더 행 찾기 (주치의 포함 행) — colIdx는 1-indexed
   let hdrRow = 1, colIdx = {};
-  for (let r = range.s.r; r <= Math.min(range.e.r, 6); r++) {
-    const row = Array.from({length: range.e.c+1}, (_,c) => {
-      const cell = ws[XLSX.utils.encode_cell({r,c})];
-      return cell ? s(cell.v) : '';
-    });
-    if (row.some(v => v === '주치의')) {
+  ws.eachRow((row, r) => {
+    if (Object.keys(colIdx).length > 0) return;
+    const vals = [];
+    row.eachCell({includeEmpty: true}, (cell, c) => { vals[c] = s(cell.value); });
+    if (vals.some(v => v === '주치의')) {
       hdrRow = r;
-      row.forEach((v,c) => { if(v) colIdx[v] = c; });
-      break;
+      vals.forEach((v, c) => { if(v) colIdx[v] = c; });
     }
-  }
+  });
 
-  const docCol  = colIdx['주치의'] ?? 1;
-  const deptCol = colIdx['진료과'] ?? 0;
-
-  // 유효 컬럼 집합
+  const docCol  = colIdx['주치의'] ?? 2;
+  const deptCol = colIdx['진료과'] ?? 1;
   const VALID = new Set(Object.keys(colIdx).filter(k => !['진료과','주치의'].includes(k)));
 
   // 의사별 행 업데이트
   const deptSums = {};
-  for (let r = hdrRow+1; r <= range.e.r; r++) {
-    const cDoc = ws[XLSX.utils.encode_cell({r, c:docCol})];
-    if (!cDoc || !cDoc.v) continue;
-    const doc  = s(cDoc.v);
+  ws.eachRow((row, r) => {
+    if (r <= hdrRow) return;
+    const doc = s(row.getCell(docCol).value);
+    if (!doc) return;
     const counts = m.t2[doc];
-    if (!counts) continue;
-
-    const cDept = ws[XLSX.utils.encode_cell({r, c:deptCol})];
-    const dept  = cDept ? s(cDept.v) : '';
+    if (!counts) return;
+    const dept = s(row.getCell(deptCol).value);
 
     for (const [col, ci] of Object.entries(colIdx)) {
       if (!VALID.has(col)) continue;
-      cellSet(ws, r, ci, counts[col]||0);
+      exSetVal(ws, r, ci, counts[col]||0);
     }
-    // 과별 합계 누적
     if (dept) {
       if (!deptSums[dept]) deptSums[dept] = {};
       for (const col of VALID) deptSums[dept][col] = (deptSums[dept][col]||0) + (counts[col]||0);
     }
-  }
+  });
 
   // 합계 행 & 총합계 행
-  for (let r = hdrRow+1; r <= range.e.r; r++) {
+  ws.eachRow((row, r) => {
+    if (r <= hdrRow) return;
     let label = '';
-    for (let c = 0; c < 3; c++) {
-      const cell = ws[XLSX.utils.encode_cell({r,c})];
-      if (cell && String(cell.v||'').includes('합계')) { label = s(cell.v); break; }
+    for (let c = 1; c <= 3; c++) {
+      const v = s(row.getCell(c).value);
+      if (v.includes('합계')) { label = v; break; }
     }
-    if (!label) continue;
+    if (!label) return;
 
     if (label.includes('총합계') || label.includes('총 합계')) {
       const all = {};
       for (const ds of Object.values(deptSums))
         for (const [k,v] of Object.entries(ds)) all[k] = (all[k]||0)+v;
       for (const [col, ci] of Object.entries(colIdx))
-        if (VALID.has(col)) cellSet(ws, r, ci, all[col]||0);
+        if (VALID.has(col)) exSetVal(ws, r, ci, all[col]||0);
     } else {
       const dept = label.replace(/\s*합계$/, '').trim();
       const sums = deptSums[dept] || {};
       for (const [col, ci] of Object.entries(colIdx))
-        if (VALID.has(col)) cellSet(ws, r, ci, sums[col]||0);
+        if (VALID.has(col)) exSetVal(ws, r, ci, sums[col]||0);
     }
-  }
+  });
 
-  // 담당질환 테이블 (col 43, 44)
+  // 담당질환 테이블 (col 43→44)
   const DISEASE_KEYS = new Set(['AML','ALL','BMF/MPN','MM','Lymphoma','Infection','중환자실']);
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    const c43 = ws[XLSX.utils.encode_cell({r,c:42})];
-    if (!c43) continue;
-    const lbl = s(c43.v);
-    if (DISEASE_KEYS.has(lbl)) cellSet(ws, r, 43, m.dis[lbl]||0);
-  }
+  ws.eachRow((row, r) => {
+    const lbl = s(row.getCell(43).value);
+    if (DISEASE_KEYS.has(lbl)) exSetVal(ws, r, 44, m.dis[lbl]||0);
+  });
 
   // 병동별 병상가동율
-  for (let r = hdrRow+1; r <= Math.min(hdrRow+50, range.e.r); r++) {
-    const c0 = ws[XLSX.utils.encode_cell({r,c:0})];
-    if (!c0) continue;
-    const v0 = s(c0.v);
+  const allSums = {};
+  for (const ds of Object.values(deptSums))
+    for (const [k,v] of Object.entries(ds)) allSums[k] = (allSums[k]||0)+v;
+
+  ws.eachRow((row, r) => {
+    if (r <= hdrRow) return;
+    const v0 = s(row.getCell(1).value);
     if (v0.includes('병동별') && v0.includes('병상가동율')) {
-      const allSums = {};
-      for (const ds of Object.values(deptSums))
-        for (const [k,v] of Object.entries(ds)) allSums[k] = (allSums[k]||0)+v;
       for (const [ward, beds] of Object.entries(WARD_BEDS)) {
         const ci = colIdx[ward];
-        if (ci != null && beds) cellSet(ws, r, ci, pct(allSums[ward]||0, beds));
+        if (ci != null && beds) exSetVal(ws, r, ci, pct(allSums[ward]||0, beds));
       }
     }
-  }
+  });
 }
 
 /* ================================================================
