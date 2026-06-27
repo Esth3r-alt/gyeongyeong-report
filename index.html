@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>경영팀 일일현황 자동생성</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@latest/dist/web/variable/pretendardvariable.css">
+<style>
+:root {
+  --bg:           #F7F8FA;
+  --surface:      #FFFFFF;
+  --surface-alt:  #EFF2F7;
+  --primary:      #1A4D8F;
+  --primary-mid:  #2B6CB0;
+  --accent:       #0097A7;
+  --warm:         #E67E22;
+  --positive:     #1B7F4E;
+  --negative:     #C0392B;
+  --neutral:      #6B7280;
+  --border:       #DDE3EC;
+  --text:         #1A202C;
+  --text-sub:     #4A5568;
+  --text-muted:   #718096;
+  --font:         'PretendardVariable','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  --mono:         'JetBrains Mono','Fira Code','D2Coding',monospace;
+  --radius:       8px;
+  --shadow:       0 1px 4px rgba(0,0,0,.08),0 0 0 1px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--bg);line-height:1.6}
+
+/* ── Header ── */
+.hdr{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:56px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100}
+.hdr-left{display:flex;align-items:center;gap:12px}
+.hdr-logo{width:30px;height:30px;background:var(--primary);border-radius:7px;
+  display:flex;align-items:center;justify-content:center}
+.hdr-name{font-size:15px;font-weight:700;color:var(--primary);letter-spacing:-.3px}
+.hdr-sub{font-size:11px;color:var(--text-muted);letter-spacing:.4px;text-transform:uppercase}
+.hdr-date{font-family:var(--mono);font-size:12px;color:var(--text-sub);
+  background:var(--surface-alt);padding:4px 10px;border-radius:4px;display:none}
+
+/* ── Main ── */
+.main{max-width:1060px;margin:0 auto;padding:28px 24px}
+
+/* ── Upload ── */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);background:var(--surface);
+  padding:40px 24px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;
+  position:relative;margin-bottom:20px}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--primary-mid);background:#F0F4FA}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-icon{color:var(--primary-mid);margin-bottom:10px}
+.upload-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:4px}
+.upload-sub{font-size:13px;color:var(--text-muted)}
+.sec-badge{display:inline-flex;align-items:center;gap:6px;margin-top:14px;
+  padding:4px 12px;background:var(--surface-alt);border-radius:20px;
+  font-size:11px;color:var(--text-sub)}
+
+/* ── Status ── */
+.status{display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:var(--radius);
+  font-size:13px;margin-bottom:20px;display:none}
+.status.proc{background:#EFF6FF;color:#1E40AF;border-left:3px solid #3B82F6}
+.status.ok{background:#ECFDF5;color:#065F46;border-left:3px solid var(--positive)}
+.status.err{background:#FEF2F2;color:#991B1B;border-left:3px solid var(--negative)}
+
+/* ── Results ── */
+.results{display:none}
+.results.show{display:block}
+.date-tag{display:inline-flex;align-items:center;gap:7px;padding:5px 14px;
+  background:var(--primary);color:#fff;border-radius:4px;
+  font-family:var(--mono);font-size:13px;font-weight:600;margin-bottom:20px}
+
+/* ── Section (중분류 container) ── */
+.section{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);
+  margin-bottom:12px;overflow:hidden}
+.sec-hdr{display:flex;align-items:center;gap:10px;padding:13px 18px;cursor:pointer;
+  user-select:none;border-bottom:1px solid var(--surface-alt)}
+.sec-hdr:hover{background:#FAFBFC}
+.sec-ico{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sec-title{font-size:14px;font-weight:600;color:var(--text);flex:1}
+.sec-sum{font-size:12px;color:var(--text-muted);font-family:var(--mono)}
+.sec-chev{color:var(--text-muted);transition:transform .2s;flex-shrink:0}
+.section.closed .sec-chev{transform:rotate(-90deg)}
+.sec-body{padding:16px 18px}
+.section.closed .sec-body{display:none}
+
+/* ── KPI grid (소분류) ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.kpi{border-left:3px solid var(--primary);padding:13px 15px;background:var(--bg);border-radius:0 6px 6px 0}
+.kpi.ac{border-left-color:var(--accent)}
+.kpi.wm{border-left-color:var(--warm)}
+.kpi.po{border-left-color:var(--positive)}
+.kpi.ne{border-left-color:var(--neutral)}
+.kpi.vi{border-left-color:#7C3AED}
+.kpi-lbl{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.kpi-val{font-size:22px;font-weight:700;font-family:var(--mono);color:var(--text);font-variant-numeric:tabular-nums}
+.kpi-unit{font-size:13px;font-weight:400;color:var(--text-sub);margin-left:2px}
+.kpi-rate{margin-top:3px;font-size:11px;color:var(--text-muted);font-family:var(--mono)}
+.kpi-bar{margin-top:5px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.kpi-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .5s ease}
+.sub-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:7px}
+.sub-item{display:flex;align-items:center;gap:5px;font-size:11px}
+.sub-lbl{color:var(--text-muted)}
+.sub-val{font-family:var(--mono);font-weight:600;color:var(--text-sub)}
+
+/* ── Disease table ── */
+.dis-table{width:100%;border-collapse:collapse;font-size:13px}
+.dis-table th{background:var(--surface-alt);padding:7px 14px;text-align:left;
+  font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+  letter-spacing:.5px;border-bottom:1px solid var(--border)}
+.dis-table td{padding:9px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+.dis-table tr:hover td{background:#F0F6FF}
+.dis-table tr:last-child td{border-bottom:none;font-weight:600;background:var(--surface-alt)}
+.dis-count{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--primary)}
+.dis-pct{font-family:var(--mono);font-size:12px;color:var(--text-muted)}
+
+/* ── Download button ── */
+.dl-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  padding:13px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);
+  font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s;margin-top:20px}
+.dl-btn:hover{background:var(--primary-mid)}
+.dl-btn:disabled{background:var(--neutral);cursor:not-allowed}
+
+/* ── Spinner ── */
+.spin{width:15px;height:15px;border:2px solid currentColor;border-top-color:transparent;
+  border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Log expander ── */
+.log-wrap{margin-top:8px}
+.log-toggle{font-size:11px;color:var(--text-muted);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.log-toggle:hover{color:var(--text-sub)}
+.log-box{display:none;margin-top:6px;padding:10px 12px;background:#F8F9FA;border-radius:5px;
+  font-size:11px;font-family:var(--mono);color:var(--text-sub);line-height:1.7;max-height:180px;overflow-y:auto}
+.log-box.show{display:block}
+
+@media print{
+  .hdr{position:static}.upload-zone,.dl-btn,.log-wrap{display:none}
+  .section.closed .sec-body{display:block!important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-left">
+    <div class="hdr-logo">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5">
+        <path d="M12 2v20M2 12h20"/>
+      </svg>
+    </div>
+    <div>
+      <div class="hdr-name">경영팀 일일현황 자동생성</div>
+      <div class="hdr-sub">서울성모병원 가톨릭혈액병원</div>
+    </div>
+  </div>
+  <div class="hdr-date" id="hdrDate"></div>
+</header>
+
+<main class="main">
+
+  <!-- Upload zone -->
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" id="fileInput" accept=".zip,.xlsx,.xls" multiple>
+    <div class="upload-icon">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <polyline points="16 16 12 12 8 16"/>
+        <line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+    </div>
+    <div class="upload-title">ZIP 파일 또는 xlsx / xls 파일 업로드</div>
+    <div class="upload-sub">클릭하거나 드래그 &nbsp;·&nbsp; zip 1개 또는 원본 데이터 파일 여러 개</div>
+    <div class="sec-badge">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      데이터는 브라우저 밖으로 나가지 않습니다
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status" id="status"></div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+    <div class="date-tag" id="dateTag">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      <span id="dateStr"></span>
+    </div>
+
+    <div id="sections"></div>
+
+    <!-- Excel download -->
+    <button class="dl-btn" id="dlBtn">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Excel 다운로드 (표1 + 표2)
+    </button>
+
+    <!-- Processing log -->
+    <div class="log-wrap">
+      <span class="log-toggle" onclick="this.nextElementSibling.classList.toggle('show')">
+        ▸ 처리 로그 보기
+      </span>
+      <div class="log-box" id="logBox"></div>
+    </div>
+  </div>
+</main>
+
+<!-- Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<script>
+/* ================================================================
+   상수 (설명.xlsx 정의 기준)
+================================================================ */
+const INFEC_DOCS   = new Set(['이동건','노덕희','이래석','조성연','홍한터']);
+const PEDS_DOCS    = new Set(['조빈','정낙균','이재욱','유재원','조수정']);
+const SEOUL_WARDS  = new Set([
+  '18층1병동','18층2병동','19층1병동','19층2병동',
+  '20층1병동','20층2병동','21층1병동','21층2병동','혈액계중환자실'
+]);
+const FILE2_WARDS  = new Set([
+  '18층1병동','18층2병동','19층1병동','19층2병동',
+  '20층1병동','20층2병동','혈액계중환자실'
+]);
+const TARGET_DEPTS = new Set(['혈액내과','감염내과','소아청소년과']);
+const BEDS = { dedicated:244, transplant:46, sterile:74, general:124 };
+const WARD_BEDS = {
+  '18층1병동':44,'18층2병동':44,'19층1병동':39,
+  '19층2병동':44,'20층1병동':32,'20층2병동':36,'혈액계중환자실':5
+};
+const ICU_COLS = new Set([
+  '혈액계중환자실','7층중환자실A','7층중환자실B',
+  '내과중환자실','내과중환자실B','신경계중환자실','심장계중환자실','외과중환자실','소아중환자실'
+]);
+
+/* ================================================================
+   유틸
+================================================================ */
+const s  = v => v == null ? '' : String(v).trim();
+const pct = (a,b) => b ? Math.round(a/b*10000)/100 : 0;
+
+function roomNum(v) {
+  const m = String(v||'').match(/-?(\d+)$/);
+  return m ? parseInt(m[1]) : null;
+}
+function isRI(v){ return String(v||'').toLowerCase().includes('ri'); }
+
+function toDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  if (typeof v === 'number') {
+    // Excel serial (1900-based, account for Excel leap year bug)
+    const ms = (v - 25569) * 86400000;
+    return new Date(ms);
+  }
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  const days = ['일','월','화','수','목','금','토'];
+  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
+}
+function fmtDs(d) {
+  if (!d) return 'today';
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* ================================================================
+   파일 유형 식별 (헤더·내용 기반, 파일명 절대 사용 안 함)
+================================================================ */
+function identifyType(header, rows) {
+  const h = header.map(c => s(c).replace(/\n/g,''));
+  const h1 = h[1]||'', h2 = h[2]||'';
+
+  // file4: 입원예약
+  if (h1.includes('입원여부') || h1.includes('입원예약') || h2.includes('입원예약')) return 'file4';
+
+  // file3/file7: BED
+  if (h1 === 'BED') {
+    const hasCircC = rows.some(r => r[0] != null && s(r[6]) === 'ⓒ');
+    return hasCircC ? 'file7' : 'file3';
+  }
+
+  // file5: 전일입원 (col[1]=환자번호)
+  if (h1 === '환자번호') return 'file5';
+
+  // file1/file2/file6: 공통 헤더 (col[1]=진단명)
+  if (h1 === '진단명') {
+    // file6: col[21] 퇴원일자가 실제 날짜 (재원=9999-12-31)
+    for (const r of rows.slice(0,20)) {
+      if (r[0] == null || r[21] == null) continue;
+      const d = toDate(r[21]);
+      if (d && d.getFullYear() > 2020 && d.getFullYear() < 9999) return 'file6';
+    }
+    // file2: 모든 환자가 서울성모 단일 병동
+    const wards = new Set(rows.slice(0,50).filter(r=>r[0]!=null&&r[12]!=null).map(r=>s(r[12])));
+    if (wards.size > 0 && [...wards].every(w => FILE2_WARDS.has(w))) return 'file2';
+    return 'file1';
+  }
+  return '설명';
+}
+
+/* ================================================================
+   중복 제거 (PID 기반)
+================================================================ */
+function dedup(rows, pidCol) {
+  const seen = new Set();
+  return rows.filter(r => {
+    if (r[0] == null || r.length <= pidCol || r[pidCol] == null) return false;
+    const pid = String(r[pidCol]);
+    if (seen.has(pid)) return false;
+    seen.add(pid); return true;
+  });
+}
+
+/* ================================================================
+   보고 날짜 추출 (file6 전일퇴원 날짜 + 1일)
+================================================================ */
+function extractReportDate(file6) {
+  for (const r of file6) {
+    if (r[0] == null || r[21] == null) continue;
+    const d = toDate(r[21]);
+    if (d && d.getFullYear() > 2020 && d.getFullYear() < 9999)
+      return new Date(d.getTime() + 86400000);
+  }
+  return new Date();
+}
+
+/* ================================================================
+   지표 계산 (설명.xlsx 정의 기준)
+================================================================ */
+function calcMetrics(data) {
+  const { file1, file2, file3, file4, file5, file6, file7, file8, reportDate } = data;
+
+  /* 1. 전체 입원환자 (file1 과별재원) */
+  const total = file1.filter(r => r[0] != null && (
+    s(r[10]) === '혈액내과'
+    || (s(r[10]) === '감염내과' && INFEC_DOCS.has(s(r[11])) && SEOUL_WARDS.has(s(r[12])))
+    || (s(r[10]) === '소아청소년과' && PEDS_DOCS.has(s(r[11])))
+  )).length;
+
+  /* 2. 이식병실 (file2 병동별재원) */
+  const transplant = file2.filter(r => r[0] != null && (
+    (s(r[12]) === '20층1병동' && roomNum(r[13]) !== 108)
+    || (s(r[12]) === '20층2병동' && roomNum(r[13]) >= 201 && roomNum(r[13]) <= 206)
+    || (s(r[12]) === '19층1병동' && [115,116].includes(roomNum(r[13])))
+  )).length;
+
+  /* 3. 무균병실 (file2) */
+  const sterile = file2.filter(r => r[0] != null && (
+    (s(r[12]) === '19층2병동' && ![204,205,206].includes(roomNum(r[13])))
+    || (s(r[12]) === '20층2병동' && roomNum(r[13]) >= 207 && roomNum(r[13]) <= 214)
+  )).length;
+
+  /* 4. 전용 일반병실 (file2) */
+  const genDed = file2.filter(r => r[0] != null && (
+    ['18층1병동','18층2병동','혈액계중환자실'].includes(s(r[12]))
+    || (s(r[12]) === '19층1병동' && ![108,109,110,115,116].includes(roomNum(r[13])) && !isRI(r[13]))
+    || (s(r[12]) === '19층2병동' && [205,206].includes(roomNum(r[13])))
+  )).length;
+
+  const dedicated = transplant + sterile + genDed;
+  const general   = total - transplant - sterile;
+  const genNon    = general - genDed;
+
+  /* 5. 응급실 재원 (file3, col[13]=진료과) */
+  const er = file3.filter(r => r[0] != null && r.length > 13 && TARGET_DEPTS.has(s(r[13]))).length;
+
+  /* 6. 입원대기 (file4, col[39]=예약진료과, col[15]=전문의) */
+  const waiting = file4.filter(r => r[0] != null && r.length > 39 && (
+    s(r[39]) === '혈액내과'
+    || (s(r[39]) === '감염내과'  && r.length > 15 && INFEC_DOCS.has(s(r[15])))
+    || (s(r[39]) === '소아청소년과' && r.length > 15 && PEDS_DOCS.has(s(r[15])))
+  )).length;
+
+  /* 7. 전일입원 (file5, col[11]=병동) */
+  const prevAdm = file5.filter(r => r[0] != null && r.length > 11 && SEOUL_WARDS.has(s(r[11]))).length;
+
+  /* 8. 전일퇴원 (file6 + file7) */
+  const prevDate = reportDate ? new Date(reportDate.getTime() - 86400000) : null;
+  const prevDis =
+    file6.filter(r => r[0] != null && r.length > 10 && ['혈액내과','감염내과'].includes(s(r[10]))).length
+    + file6.filter(r => r[0] != null && r.length > 11 && s(r[10]) === '소아청소년과' && PEDS_DOCS.has(s(r[11]))).length
+    + file7.filter(r => {
+      if (!r[0] || r.length <= 19 || s(r[13]) !== '혈액내과') return false;
+      const d = toDate(r[19]);
+      return d && prevDate && d.toDateString() === prevDate.toDateString();
+    }).length;
+
+  /* 9. BMT D-Day (file8, col[10]=이름) */
+  const bmt = file8.filter(r => r.length > 10 && r[10] && !['','이름'].includes(s(r[10]))).length;
+
+  /* 10. 담당질환 (file1 혈액내과) */
+  const EXCL = new Set(['임진조']);
+  const dis = {AML:0,ALL:0,'BMF/MPN':0,MM:0,Lymphoma:0,Infection:0,'중환자실':0};
+  for (const r of file1) {
+    if (!r[0]) continue;
+    const dept = s(r[10]), doc = s(r[11]), ward = s(r[12]), diag = s(r[1]);
+    if (EXCL.has(doc)) continue;
+    if (diag.includes('기증자') || diag.includes('이식 상태')) continue;
+
+    if (dept === '혈액내과' && SEOUL_WARDS.has(ward)) {
+      if (ward === '혈액계중환자실') { dis['중환자실']++; }
+      else if ((diag.includes('골수성 백혈병') && !diag.includes('만성'))
+            || diag.includes('골수모구성') || diag.includes('골수단구성')
+            || diag.includes('전골수구성')
+            || (diag.includes('골수성 육종') && !diag.includes('림프')))
+        { dis.AML++; }
+      else if (diag.includes('림프모구성') || diag.includes('림프모세포') || diag.includes('버킷')
+            || (diag.includes('전구물질') && diag.includes('림프')))
+        { dis.ALL++; }
+      else if (['형성이상','골수섬유증','재생불량성','저형성빈혈','만성 골수성','진성적혈구','혈소판증가'].some(k=>diag.includes(k)))
+        { dis['BMF/MPN']++; }
+      else if (['골수종','아밀로이드','형질모세포'].some(k=>diag.includes(k)))
+        { dis.MM++; }
+      else { dis.Lymphoma++; }
+    } else if (dept === '감염내과' && INFEC_DOCS.has(doc) && SEOUL_WARDS.has(ward)) {
+      dis.Infection++;
+    }
+  }
+
+  /* 11. 표2용: 의사별·병동별 집계 */
+  const WARD_TO_COL = {
+    '18층1병동':'18층1병동','18층2병동':'18층2병동','19층1병동':'19층1병동','19층2병동':'19층2병동',
+    '20층1병동':'20층1병동','20층2병동':'20층2병동','21층1병동':'21층1병동','21층2병동':'21층2병동',
+    '혈액계중환자실':'혈액계중환자실','7A중환자실':'7층중환자실A','7B중환자실':'7층중환자실B',
+  };
+  const docWard = {};
+  const pidToDoc = {};
+  for (const r of file1) {
+    if (r[0] && r[2] && r[11]) pidToDoc[String(r[2])] = s(r[11]);
+  }
+  for (const r of file1) {
+    if (!r[0]) continue;
+    const doc = s(r[11]), ward = s(r[12]);
+    const col = WARD_TO_COL[ward];
+    if (doc && col) {
+      if (!docWard[doc]) docWard[doc] = {};
+      docWard[doc][col] = (docWard[doc][col]||0) + 1;
+    }
+  }
+  for (const r of file3) {
+    if (!r[0]) continue;
+    const pid = r[7];
+    const doc = (r[32] ? s(r[32]) : null) || pidToDoc[String(pid||'')] || null;
+    if (doc) {
+      if (!docWard[doc]) docWard[doc] = {};
+      docWard[doc]['응급실재원'] = (docWard[doc]['응급실재원']||0) + 1;
+    }
+  }
+  const t2 = {};
+  for (const [doc, wards] of Object.entries(docWard)) {
+    const gw  = Object.entries(wards).filter(([k])=>!ICU_COLS.has(k)&&k!=='응급실재원').reduce((a,[,v])=>a+v,0);
+    const icu = Object.entries(wards).filter(([k])=>ICU_COLS.has(k)).reduce((a,[,v])=>a+v,0);
+    t2[doc] = { ...wards, 'GW+ICU': gw+icu, GW: gw, ICU: icu };
+  }
+
+  return {
+    total, total_rate: pct(total, BEDS.dedicated),
+    dedicated, dedicated_rate: pct(dedicated, BEDS.dedicated),
+    transplant, transplant_rate: pct(transplant, BEDS.transplant),
+    sterile, sterile_rate: pct(sterile, BEDS.sterile),
+    general, genDed, genNon, gen_rate: pct(genDed, BEDS.general),
+    er, total_er: total+er,
+    waiting, prevAdm, prevDis, bmt,
+    dis, t2
+  };
+}
+
+/* ================================================================
+   UI 렌더링 (대분류 → 중분류 → 소분류)
+================================================================ */
+function render(m, rd) {
+  const dateStr = fmtDate(rd);
+  document.getElementById('dateStr').textContent = dateStr;
+  const hdrDate = document.getElementById('hdrDate');
+  hdrDate.textContent = dateStr;
+  hdrDate.style.display = 'block';
+
+  const container = document.getElementById('sections');
+  container.innerHTML = '';
+
+  /* 섹션 빌더 */
+  function section(color, svgPath, title, sumText, bodyHTML) {
+    const el = document.createElement('div');
+    el.className = 'section';
+    el.innerHTML = `
+      <div class="sec-hdr" onclick="this.parentElement.classList.toggle('closed')">
+        <div class="sec-ico" style="background:${color}18">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">${svgPath}</svg>
+        </div>
+        <span class="sec-title">${title}</span>
+        <span class="sec-sum">${sumText}</span>
+        <svg class="sec-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </div>
+      <div class="sec-body">${bodyHTML}</div>`;
+    return el;
+  }
+
+  /* KPI 카드 빌더 */
+  function kpi(cls, label, val, unit, rate, barColor) {
+    const bar = rate != null ? `
+      <div class="kpi-rate">가동율 ${rate}%</div>
+      <div class="kpi-bar"><div class="kpi-fill" style="width:${Math.min(rate,120)}%;background:${barColor||'var(--accent)'}"></div></div>` : '';
+    return `<div class="kpi ${cls}">
+      <div class="kpi-lbl">${label}</div>
+      <div class="kpi-val">${val}<span class="kpi-unit">${unit}</span></div>${bar}
+    </div>`;
+  }
+
+  /* ── 대분류: 서울성모병원 가톨릭혈액병원 ── */
+
+  /* 중분류 1: 입원환자 현황 */
+  container.appendChild(section(
+    'var(--primary)',
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/>',
+    '입원환자 현황',
+    `전체 ${m.total}명 &nbsp;·&nbsp; 전용대비 ${m.total_rate}%`,
+    `<div class="kpi-grid">
+      ${kpi('', '전체 입원환자', m.total, '명', m.total_rate, 'var(--primary)')}
+      ${kpi('ac', '이식병실', m.transplant, '명', m.transplant_rate, 'var(--accent)')}
+      ${kpi('ac', '무균병실', m.sterile, '명', m.sterile_rate, 'var(--accent)')}
+      <div class="kpi po">
+        <div class="kpi-lbl">일반병실</div>
+        <div class="kpi-val">${m.general}<span class="kpi-unit">명</span></div>
+        <div class="sub-row">
+          <span class="sub-item"><span class="sub-lbl">전용</span>&nbsp;<span class="sub-val">${m.genDed}</span></span>
+          <span class="sub-item"><span class="sub-lbl">비전용</span>&nbsp;<span class="sub-val">${m.genNon}</span></span>
+        </div>
+        <div class="kpi-rate">가동율 ${m.gen_rate}%</div>
+        <div class="kpi-bar"><div class="kpi-fill" style="width:${Math.min(m.gen_rate,120)}%;background:var(--positive)"></div></div>
+      </div>
+    </div>`
+  ));
+
+  /* 중분류 2: 응급실 현황 */
+  container.appendChild(section(
+    'var(--warm)',
+    '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    '응급실 현황',
+    `재원 ${m.er}명 &nbsp;·&nbsp; 합계 ${m.total_er}명`,
+    `<div class="kpi-grid">
+      ${kpi('wm', '응급실 재원', m.er, '명', null)}
+      ${kpi('', '입원 + 응급 합계', m.total_er, '명', null)}
+    </div>`
+  ));
+
+  /* 중분류 3: 입퇴원 현황 */
+  container.appendChild(section(
+    'var(--accent)',
+    '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    '입퇴원 현황',
+    `대기 ${m.waiting}명 &nbsp;·&nbsp; 전일입원 ${m.prevAdm}명 &nbsp;·&nbsp; 전일퇴원 ${m.prevDis}명`,
+    `<div class="kpi-grid">
+      ${kpi('ne', '입원대기 (외래)', m.waiting, '명', null)}
+      ${kpi('ac', '전일입원', m.prevAdm, '명', null)}
+      ${kpi('po', '전일퇴원', m.prevDis, '명', null)}
+    </div>`
+  ));
+
+  /* 중분류 4: BMT 현황 */
+  container.appendChild(section(
+    '#7C3AED',
+    '<circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>',
+    'BMT 현황',
+    `D-Day ${m.bmt}명`,
+    `<div class="kpi-grid">${kpi('vi', 'BMT D-Day', m.bmt, '명', null)}</div>`
+  ));
+
+  /* 중분류 5: 담당질환 */
+  const DIS_LIST = [
+    {k:'AML',      label:'AML',       note:'급성 골수성 백혈병'},
+    {k:'ALL',      label:'ALL',       note:'급성 림프모구 백혈병'},
+    {k:'BMF/MPN',  label:'BMF / MPN', note:'골수부전 · 골수증식종양'},
+    {k:'MM',       label:'MM',        note:'다발성 골수종'},
+    {k:'Lymphoma', label:'Lymphoma',  note:'림프종 (CLL 포함)'},
+    {k:'Infection',label:'Infection', note:'감염내과'},
+    {k:'중환자실',  label:'중환자실',   note:'혈액계 ICU'},
+  ];
+  const totalDis = Object.values(m.dis).reduce((a,b)=>a+b,0);
+  const disRows = DIS_LIST.map(d=>`
+    <tr>
+      <td><strong>${d.label}</strong></td>
+      <td style="color:var(--text-muted);font-size:12px">${d.note}</td>
+      <td style="text-align:right" class="dis-count">${m.dis[d.k]}</td>
+      <td style="text-align:right" class="dis-pct">${totalDis ? Math.round(m.dis[d.k]/totalDis*1000)/10 : 0}%</td>
+    </tr>`).join('');
+  container.appendChild(section(
+    'var(--positive)',
+    '<path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>',
+    '담당질환별 현황 (혈액내과)',
+    `총 ${totalDis}명`,
+    `<table class="dis-table">
+      <thead><tr><th>분류</th><th>설명</th><th style="text-align:right">환자수</th><th style="text-align:right">비율</th></tr></thead>
+      <tbody>${disRows}
+        <tr>
+          <td colspan="2"><strong>합 계</strong></td>
+          <td style="text-align:right" class="dis-count">${totalDis}</td>
+          <td style="text-align:right" class="dis-pct">100%</td>
+        </tr>
+      </tbody>
+    </table>`
+  ));
+
+  document.getElementById('results').classList.add('show');
+}
+
+/* ================================================================
+   파일 처리
+================================================================ */
+const LOG = [];
+let GLOBAL = { data:null, metrics:null };
+
+function showStatus(type, msg) {
+  const el = document.getElementById('status');
+  const ico = {
+    proc: '<span class="spin"></span>',
+    ok:   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>',
+    err:  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>'
+  };
+  el.className = `status ${type}`;
+  el.style.display = 'flex';
+  el.innerHTML = `${ico[type]||''}${msg}`;
+}
+
+async function processOneFile(buf, fname, data) {
+  const lower = fname.toLowerCase();
+  const isXls = lower.endsWith('.xls') && !lower.endsWith('.xlsx');
+
+  if (!lower.match(/\.xlsx?$/)) return;
+
+  const wb = XLSX.read(buf, { type:'array', cellDates:true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+  if (!rows.length) return;
+
+  if (isXls) {
+    data.file8.push(...rows);
+    LOG.push(`[file8-BMT] ${fname} (${rows.length}행)`);
+    return;
+  }
+
+  const header = rows[0], drows = rows.slice(1);
+  const ftype  = identifyType(header, drows);
+  if (data[ftype]) {
+    data[ftype].push(...drows);
+    LOG.push(`[${ftype}] ${fname} (${drows.length}행)`);
+  } else {
+    LOG.push(`[건너뜀·${ftype}] ${fname}`);
+  }
+}
+
+async function processFiles(files) {
+  LOG.length = 0;
+  showStatus('proc', '파일 분석 중...');
+  document.getElementById('results').classList.remove('show');
+
+  const data = {
+    file1:[],file2:[],file3:[],file4:[],
+    file5:[],file6:[],file7:[],file8:[],
+    reportDate: null
+  };
+
+  try {
+    const fileArr = [...files].sort((a,b) => a.name.localeCompare(b.name));
+
+    for (const file of fileArr) {
+      if (file.name.toLowerCase().endsWith('.zip')) {
+        const zip = await JSZip.loadAsync(file);
+        const entries = Object.values(zip.files)
+          .filter(e => !e.dir && e.name.match(/\.xlsx?$/i))
+          .sort((a,b) => a.name.localeCompare(b.name));
+        for (const entry of entries) {
+          const buf = await entry.async('arraybuffer');
+          const fname = entry.name.split('/').pop();
+          await processOneFile(buf, fname, data);
+        }
+      } else {
+        const buf = await file.arrayBuffer();
+        await processOneFile(buf, file.name, data);
+      }
+    }
+
+    // 중복 제거
+    data.file1 = dedup(data.file1, 2);
+    data.file2 = dedup(data.file2, 2);
+    data.file5 = dedup(data.file5, 1);
+    data.file6 = dedup(data.file6, 2);
+
+    data.reportDate = extractReportDate(data.file6);
+
+    const summary = ['file1','file2','file3','file4','file5','file6','file7','file8']
+      .map(k=>`${k}:${data[k].length}행`).join(' / ');
+    LOG.unshift(`날짜: ${fmtDate(data.reportDate)}`);
+    LOG.unshift(summary);
+
+    document.getElementById('logBox').innerHTML = LOG.map(l=>`<div>${l}</div>`).join('');
+
+    const m = calcMetrics(data);
+    GLOBAL = { data, metrics: m };
+    render(m, data.reportDate);
+    showStatus('ok', `처리 완료 — 전체 ${m.total}명 | 이식 ${m.transplant} | 무균 ${m.sterile} | ER ${m.er}명`);
+  } catch (err) {
+    showStatus('err', '오류: ' + err.message);
+    console.error(err);
+  }
+}
+
+/* ================================================================
+   Excel 다운로드 (template.xlsx 사용)
+================================================================ */
+async function downloadExcel() {
+  const btn = document.getElementById('dlBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>&nbsp;생성 중...';
+
+  try {
+    const resp = await fetch('./template.xlsx');
+    if (!resp.ok) throw new Error('template.xlsx 없음. 저장소 루트에 template.xlsx 파일이 필요합니다.');
+    const buf = await resp.arrayBuffer();
+    const wb  = XLSX.read(buf, { type:'array', cellDates:true });
+
+    const m  = GLOBAL.metrics;
+    const rd = GLOBAL.data.reportDate;
+
+    // 표1 업데이트
+    const ws1name = wb.SheetNames.find(n => n.includes('표1'));
+    if (ws1name) updateSheet1(wb.Sheets[ws1name], m, rd);
+
+    // 표2 업데이트
+    const ws2name = wb.SheetNames.find(n => n.includes('표2'));
+    if (ws2name) updateSheet2(wb.Sheets[ws2name], m);
+
+    XLSX.writeFile(wb, `경영팀_일일현황_${fmtDs(rd)}.xlsx`);
+  } catch(err) {
+    showStatus('err', 'Excel 오류: ' + err.message);
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg> Excel 다운로드 (표1 + 표2)`;
+  }
+}
+
+function cellSet(ws, r, c, v) {
+  const addr = XLSX.utils.encode_cell({r, c});
+  if (!ws[addr]) ws[addr] = {};
+  ws[addr].v = v;
+  ws[addr].t = typeof v === 'number' ? 'n' : (v instanceof Date ? 'd' : 's');
+  if (typeof v === 'number') ws[addr].z = '0.00';
+}
+
+function updateSheet1(ws, m, rd) {
+  const range = XLSX.utils.decode_range(ws['!ref']||'A1');
+  const LABELS = {
+    '전체 입원환자 수':           m.total,
+    '전용대비 입원환자 가동율(%)': m.total_rate,
+    '전용병상 입원환자 수':        m.dedicated,
+    '전용병상 가동율(%)':          m.dedicated_rate,
+    '전용 이식병실 가동율(%)':     m.transplant_rate,
+    '전용 무균병실 가동율(%)':     m.sterile_rate,
+    '일반병실 입원환자 수':        m.general,
+    '1) 전용병상 입원환자  수':    m.genDed,
+    '2) 비전용병상 입원환자 수':   m.genNon,
+    '전용일반병실 가동율(%)':      m.gen_rate,
+    '입원+응급실':                 m.total_er,
+    '입원대기 (외래)':             m.waiting,
+    '전일입원*':                   m.prevAdm,
+    '전일퇴원*':                   m.prevDis,
+    '전일전원*':                   0,
+    'BMT D-Day':                   m.bmt,
+  };
+  let txSec = false, stSec = false;
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const cA = ws[XLSX.utils.encode_cell({r,c:0})];
+    const cB = ws[XLSX.utils.encode_cell({r,c:1})];
+    const vA = cA ? s(cA.v) : '';
+    const vB = cB ? s(cB.v) : '';
+
+    if (vA.includes('이식')) txSec=true;
+    if (vA.includes('무균')) stSec=true;
+    if (vA === '응급실' || vA.includes('기타')) { txSec=false; stSec=false; }
+
+    if (vB === '입원환자 수') {
+      if (txSec) cellSet(ws, r, 2, m.transplant);
+      else if (stSec) cellSet(ws, r, 2, m.sterile);
+    }
+    if (LABELS[vB] !== undefined) cellSet(ws, r, 2, LABELS[vB]);
+
+    // 날짜 셀
+    if (cB && cB.t === 'd') cellSet(ws, r, 1, rd);
+  }
+}
+
+function updateSheet2(ws, m) {
+  const range = XLSX.utils.decode_range(ws['!ref']||'A1');
+  // 헤더 행 찾기 (주치의 포함 행)
+  let hdrRow = 1, colIdx = {};
+  for (let r = range.s.r; r <= Math.min(range.e.r, 6); r++) {
+    const row = Array.from({length: range.e.c+1}, (_,c) => {
+      const cell = ws[XLSX.utils.encode_cell({r,c})];
+      return cell ? s(cell.v) : '';
+    });
+    if (row.some(v => v === '주치의')) {
+      hdrRow = r;
+      row.forEach((v,c) => { if(v) colIdx[v] = c; });
+      break;
+    }
+  }
+
+  const docCol  = colIdx['주치의'] ?? 1;
+  const deptCol = colIdx['진료과'] ?? 0;
+
+  // 유효 컬럼 집합
+  const VALID = new Set(Object.keys(colIdx).filter(k => !['진료과','주치의'].includes(k)));
+
+  // 의사별 행 업데이트
+  const deptSums = {};
+  for (let r = hdrRow+1; r <= range.e.r; r++) {
+    const cDoc = ws[XLSX.utils.encode_cell({r, c:docCol})];
+    if (!cDoc || !cDoc.v) continue;
+    const doc  = s(cDoc.v);
+    const counts = m.t2[doc];
+    if (!counts) continue;
+
+    const cDept = ws[XLSX.utils.encode_cell({r, c:deptCol})];
+    const dept  = cDept ? s(cDept.v) : '';
+
+    for (const [col, ci] of Object.entries(colIdx)) {
+      if (!VALID.has(col)) continue;
+      cellSet(ws, r, ci, counts[col]||0);
+    }
+    // 과별 합계 누적
+    if (dept) {
+      if (!deptSums[dept]) deptSums[dept] = {};
+      for (const col of VALID) deptSums[dept][col] = (deptSums[dept][col]||0) + (counts[col]||0);
+    }
+  }
+
+  // 합계 행 & 총합계 행
+  for (let r = hdrRow+1; r <= range.e.r; r++) {
+    let label = '';
+    for (let c = 0; c < 3; c++) {
+      const cell = ws[XLSX.utils.encode_cell({r,c})];
+      if (cell && String(cell.v||'').includes('합계')) { label = s(cell.v); break; }
+    }
+    if (!label) continue;
+
+    if (label.includes('총합계') || label.includes('총 합계')) {
+      const all = {};
+      for (const ds of Object.values(deptSums))
+        for (const [k,v] of Object.entries(ds)) all[k] = (all[k]||0)+v;
+      for (const [col, ci] of Object.entries(colIdx))
+        if (VALID.has(col)) cellSet(ws, r, ci, all[col]||0);
+    } else {
+      const dept = label.replace(/\s*합계$/, '').trim();
+      const sums = deptSums[dept] || {};
+      for (const [col, ci] of Object.entries(colIdx))
+        if (VALID.has(col)) cellSet(ws, r, ci, sums[col]||0);
+    }
+  }
+
+  // 담당질환 테이블 (col 43, 44)
+  const DISEASE_KEYS = new Set(['AML','ALL','BMF/MPN','MM','Lymphoma','Infection','중환자실']);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const c43 = ws[XLSX.utils.encode_cell({r,c:42})];
+    if (!c43) continue;
+    const lbl = s(c43.v);
+    if (DISEASE_KEYS.has(lbl)) cellSet(ws, r, 43, m.dis[lbl]||0);
+  }
+
+  // 병동별 병상가동율
+  for (let r = hdrRow+1; r <= Math.min(hdrRow+50, range.e.r); r++) {
+    const c0 = ws[XLSX.utils.encode_cell({r,c:0})];
+    if (!c0) continue;
+    const v0 = s(c0.v);
+    if (v0.includes('병동별') && v0.includes('병상가동율')) {
+      const allSums = {};
+      for (const ds of Object.values(deptSums))
+        for (const [k,v] of Object.entries(ds)) allSums[k] = (allSums[k]||0)+v;
+      for (const [ward, beds] of Object.entries(WARD_BEDS)) {
+        const ci = colIdx[ward];
+        if (ci != null && beds) cellSet(ws, r, ci, pct(allSums[ward]||0, beds));
+      }
+    }
+  }
+}
+
+/* ================================================================
+   이벤트
+================================================================ */
+const fileInput  = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+const dlBtn      = document.getElementById('dlBtn');
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files.length) processFiles(e.target.files);
+});
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
+});
+dlBtn.addEventListener('click', () => {
+  if (GLOBAL.metrics) downloadExcel();
+});
+</script>
+</body>
+</html>
