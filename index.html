@@ -801,14 +801,14 @@ function updateSheet1(ws, m, rd) {
     if (vA.includes('무균')) stSec=true;
     if (vA === '응급실' || vA.includes('기타')) { txSec=false; stSec=false; }
 
+    // 응급실 행: A열='응급실', B열='응급실'
+    if (vA === '응급실' && vB === '응급실') { cellSet(ws, r, 2, m.er); continue; }
+
     if (vB === '입원환자 수') {
       if (txSec) cellSet(ws, r, 2, m.transplant);
       else if (stSec) cellSet(ws, r, 2, m.sterile);
     }
     if (LABELS[vB] !== undefined) cellSet(ws, r, 2, LABELS[vB]);
-
-    // 날짜 셀
-    if (cB && cB.t === 'd') cellSet(ws, r, 1, rd);
   }
 }
 
