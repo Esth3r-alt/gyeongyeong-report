@@ -57,6 +57,12 @@ EUNPYEONG_TRANSPLANT = {'7A중환자실', '7B중환자실'}
 YEOUIDO_TRANSPLANT   = set()   # 신생아중환자실은 혈액 이식병실 아님
 INCHEON_TRANSPLANT   = set()
 
+# ─── file2 식별용: 서울성모 병동별재원 병동 목록 ────────────────────────────
+SEOUL_FILE2_WARDS = {
+    '18층1병동', '18층2병동', '19층1병동', '19층2병동',
+    '20층1병동', '20층2병동', '혈액계중환자실'
+}
+
 # ─── raw data 병동명 -> 경영팀 표2 컬럼명 매핑 ───────────────────────────────
 WARD_TO_COL = {
     # 서울성모 GW
@@ -119,20 +125,102 @@ def load_xls_sheet(path):
         return []
 
 
-def extract_date(filenames):
-    """파일명에서 날짜 추출. '20260625재원혈액1' -> 2026-06-25"""
-    for name in filenames:
-        m = re.search(r'(\d{8})', name)
-        if m:
-            try:
-                return datetime.strptime(m.group(1), '%Y%m%d')
-            except Exception:
-                pass
+def _load_raw_with_header(path):
+    """xlsx 파일을 (header_row, data_rows) 형태로 로드"""
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return [], []
+        return list(rows[0]), list(rows[1:])
+    except Exception as e:
+        print("  [경고] 파일 로드 실패: {} -> {}".format(os.path.basename(path), e))
+        return [], []
+
+
+def _identify_file_type(header_row, data_rows):
+    """
+    파일 헤더 + 데이터 내용만으로 파일 유형 식별 (파일명 절대 사용 안 함).
+
+    식별 기준 (설명.xlsx 정의 기반):
+      file4  : 헤더 col[1]에 '입원여부' 또는 col[2]에 '입원예약' 포함
+      file3/7: 헤더 col[1] == 'BED'
+               -> file7(응급실전일퇴원): 데이터 col[19]에 실제 날짜 존재
+               -> file3(응급실재원): 그 외
+      file5  : 헤더 col[1] == '환자번호'  (진단명 없음)
+      file6  : 헤더 col[1] == '진단명' + col[21] 퇴원일자가 실제 날짜(!=9999)
+      file2  : 헤더 col[1] == '진단명' + 병동 col[12] 값이 모두 서울병동 1개
+      file1  : 나머지 (헤더 col[1] == '진단명')
+      설명   : 위 어느 패턴도 해당 없음
+    """
+    if not header_row:
+        return 'unknown'
+
+    h = [str(c or '').strip().replace('\n', '') for c in header_row]
+    h1 = h[1] if len(h) > 1 else ''
+    h2 = h[2] if len(h) > 2 else ''
+
+    # ── file4: 입원예약 ───────────────────────────────────────────────────────
+    if '입원여부' in h1 or '입원예약' in h1 or '입원예약' in h2:
+        return 'file4'
+
+    # ── file3 / file7: ER 파일 (col[1]='BED') ────────────────────────────────
+    if h1 == 'BED':
+        # file7(ER discharge): col[6] status = circled-c (discharged)
+        # file3(ER inpatient): col[6] is None or other char, never circled-c
+        circ_c_bytes = 'ⓒ'  # ⓒ U+24D2 circled-c (file7 discharge status)
+        has_circ_c = any(
+            r[0] and len(r) > 6 and str(r[6] or '') == circ_c_bytes
+            for r in data_rows
+        )
+        if has_circ_c:
+            return 'file7'
+        return 'file3'
+
+    # ── file5: 전일입원 (col[1]='환자번호') ──────────────────────────────────
+    if h1 == '환자번호':
+        return 'file5'
+
+    # ── file1 / file2 / file6 그룹: col[1]='진단명' ───────────────────────────
+    if h1 == '진단명':
+        # file6(전일퇴원): col[21] 퇴원일자가 실제 날짜 (재원은 9999-12-31)
+        for r in data_rows[:20]:
+            if r[0] and len(r) > 21 and r[21]:
+                val = r[21]
+                if hasattr(val, 'year') and 2020 < val.year < 9999:
+                    return 'file6'
+
+        # file2(병동별재원): 환자 병동이 서울성모 특정 병동 하나로만 구성
+        wards = set()
+        for r in data_rows[:50]:
+            if r[0] and len(r) > 12 and r[12]:
+                wards.add(str(r[12]).strip())
+        if wards and wards.issubset(SEOUL_FILE2_WARDS):
+            return 'file2'
+
+        # 나머지: file1(과별재원)
+        return 'file1'
+
+    # 설명 파일 또는 알 수 없는 형식
+    return '설명'
+
+
+def _extract_report_date_from_data(data):
+    """file6 퇴원일자 + 1일 = 보고 날짜 (파일명 의존 없음)"""
+    from datetime import timedelta
+    for r in data.get('file6', []):
+        if r[0] and len(r) > 21 and r[21]:
+            val = r[21]
+            if hasattr(val, 'year') and 2020 < val.year < 9999:
+                dis_date = val.date() if hasattr(val, 'date') else None
+                if dis_date:
+                    return datetime.combine(dis_date, datetime.min.time()) + timedelta(days=1)
     return datetime.today()
 
 
 def load_all_data(zip_path):
-    """zip 파일에서 모든 raw data 로드"""
+    """zip 파일에서 모든 raw data 로드 — 파일명 아닌 내용으로 파일 유형 식별"""
     tmpdir = tempfile.mkdtemp()
     try:
         with zipfile.ZipFile(zip_path, 'r') as zf:
@@ -144,68 +232,65 @@ def load_all_data(zip_path):
 
     data = {k: [] for k in ('file1', 'file2', 'file3', 'file4',
                              'file5', 'file6', 'file7', 'file8')}
-    data['report_date'] = extract_date(list(files.keys()))
+    data['report_date'] = datetime.today()  # 임시; 아래에서 file6 기반으로 교체
 
-    for fname, fpath in files.items():
-        base = fname.lower()
-        if base.startswith('0.') or base.startswith('0 '):
+    for fname, fpath in sorted(files.items()):
+        fname_lower = fname.lower()
+
+        # .xls (확장자 .xlsx 아닌 것) = file8 (BMT)
+        if fname_lower.endswith('.xls') and not fname_lower.endswith('.xlsx'):
+            rows = load_xls_sheet(fpath)
+            data['file8'].extend(rows)  # header 포함; bmt 카운터에서 필터
+            print("  [file8-BMT] {}".format(fname))
             continue
-        if re.match(r'^1[. _]', base):
-            data['file1'].extend(load_sheet(fpath))
-        elif re.match(r'^2[. _]', base):
-            data['file2'].extend(load_sheet(fpath))
-        elif re.match(r'^3[. _]', base):
-            data['file3'].extend(load_sheet(fpath))
-        elif re.match(r'^4[. _]', base):
-            data['file4'].extend(load_sheet(fpath))
-        elif re.match(r'^5[. _]', base):
-            data['file5'].extend(load_sheet(fpath))
-        elif re.match(r'^6[. _]', base):
-            data['file6'].extend(load_sheet(fpath))
-        elif re.match(r'^7[. _]', base):
-            data['file7'].extend(load_sheet(fpath))
-        elif re.match(r'^8[. _]', base):
-            if fname.lower().endswith('.xls'):
-                data['file8'].extend(load_xls_sheet(fpath))
-            else:
-                data['file8'].extend(load_sheet(fpath))
+
+        if not fname_lower.endswith('.xlsx'):
+            continue
+
+        header, drows = _load_raw_with_header(fpath)
+        ftype = _identify_file_type(header, drows)
+        if ftype in data:
+            data[ftype].extend(drows)
+            print("  [{}] {} ({} 행)".format(ftype, fname[:45], len(drows)))
+        else:
+            print("  [건너뜀-{}] {}".format(ftype, fname[:45]))
 
     shutil.rmtree(tmpdir, ignore_errors=True)
-    return _finalize_data(data)
+    data = _finalize_data(data)
+    data['report_date'] = _extract_report_date_from_data(data)
+    return data
 
 
 def load_files_from_dir(file_paths):
-    """개별 xlsx/xls 파일 목록에서 데이터 로드 (zip 없이 직접 업로드 시)"""
+    """개별 xlsx/xls 파일 목록에서 데이터 로드 — 파일명 아닌 내용으로 파일 유형 식별"""
     data = {k: [] for k in ('file1', 'file2', 'file3', 'file4',
                              'file5', 'file6', 'file7', 'file8')}
-    data['report_date'] = extract_date([os.path.basename(p) for p in file_paths])
+    data['report_date'] = datetime.today()  # 임시; 아래에서 file6 기반으로 교체
 
-    for fpath in file_paths:
+    for fpath in sorted(file_paths):
         fname = os.path.basename(fpath)
-        base  = fname.lower()
-        if base.startswith('0.') or base.startswith('0 '):
-            continue
-        if re.match(r'^1[. _]', base):
-            data['file1'].extend(load_sheet(fpath))
-        elif re.match(r'^2[. _]', base):
-            data['file2'].extend(load_sheet(fpath))
-        elif re.match(r'^3[. _]', base):
-            data['file3'].extend(load_sheet(fpath))
-        elif re.match(r'^4[. _]', base):
-            data['file4'].extend(load_sheet(fpath))
-        elif re.match(r'^5[. _]', base):
-            data['file5'].extend(load_sheet(fpath))
-        elif re.match(r'^6[. _]', base):
-            data['file6'].extend(load_sheet(fpath))
-        elif re.match(r'^7[. _]', base):
-            data['file7'].extend(load_sheet(fpath))
-        elif re.match(r'^8[. _]', base):
-            if fname.lower().endswith('.xls'):
-                data['file8'].extend(load_xls_sheet(fpath))
-            else:
-                data['file8'].extend(load_sheet(fpath))
+        fname_lower = fname.lower()
 
-    return _finalize_data(data)
+        if fname_lower.endswith('.xls') and not fname_lower.endswith('.xlsx'):
+            rows = load_xls_sheet(fpath)
+            data['file8'].extend(rows)
+            print("  [file8-BMT] {}".format(fname))
+            continue
+
+        if not fname_lower.endswith('.xlsx'):
+            continue
+
+        header, drows = _load_raw_with_header(fpath)
+        ftype = _identify_file_type(header, drows)
+        if ftype in data:
+            data[ftype].extend(drows)
+            print("  [{}] {} ({} 행)".format(ftype, fname[:45], len(drows)))
+        else:
+            print("  [건너뜀-{}] {}".format(ftype, fname[:45]))
+
+    data = _finalize_data(data)
+    data['report_date'] = _extract_report_date_from_data(data)
+    return data
 
 
 def _finalize_data(data):
@@ -748,40 +833,43 @@ def fix_column_widths(ws):
 
 
 def _delete_other_hospital_cols(ws):
-    """표1 시트에서 타 병원 컬럼(D~F) 삭제"""
-    # D=4, E=5, F=6 → 오른쪽에서부터 삭제해야 인덱스 안 밀림
     for col_idx in (6, 5, 4):
         ws.delete_cols(col_idx)
 
 
-
 def update_disease_table(ws, disease_counts):
-    DISEASE_KEYS = {'AML', 'ALL', 'BMF/MPN', 'MM', 'Lymphoma', 'Infection', '중환자실'}
+    DISEASE_KEYS = {"AML", "ALL", "BMF/MPN", "MM", "Lymphoma", "Infection", "중환자실"}
     for row in ws.iter_rows(min_row=1, max_row=50):
         if len(row) < 43:
             continue
-        lbl = str(row[42].value or '').strip()
+        lbl = str(row[42].value or "").strip()
         if lbl in DISEASE_KEYS:
             ws.cell(row[42].row, 44).value = disease_counts.get(lbl, 0)
-    print("  담당질환 테이블 완료: {}".format(disease_counts))
+    print("  disease table: {}".format(disease_counts))
 
 
 def create_clean_excel(t1, t2, template_path, output_path, data=None):
     import shutil
     shutil.copy2(template_path, output_path)
     wb = openpyxl.load_workbook(output_path)
-    keep = {name for name in wb.sheetnames if '표1' in name or '표2' in name}
+    keep = {name for name in wb.sheetnames if "푔01" in name or "푔02" in name
+            or "푔01" in name or "푔02" in name}
+    keep2 = {name for name in wb.sheetnames if "표1" in name or "표2" in name}
+    keep = keep | keep2
+    # fallback: keep sheets with digit 1 or 2 in name that look like report sheets
+    if not keep:
+        keep = set(wb.sheetnames[:2])
     for name in list(wb.sheetnames):
         if name not in keep:
             del wb[name]
     for name in list(wb.sheetnames):
-        if '표1' in name:
+        if "표1" in name or ("1" in name and "표" in name):
             ws = wb[name]
             update_table1(ws, t1)
             _delete_other_hospital_cols(ws)
             break
     for name in list(wb.sheetnames):
-        if '표2' in name:
+        if "표2" in name or ("2" in name and "표" in name):
             ws = wb[name]
             update_table2(ws, t2)
             if data is not None:
@@ -797,11 +885,11 @@ def write_output(template_path, t1, t2, output_path):
     wb = openpyxl.load_workbook(output_path)
     names = wb.sheetnames
     for name in names:
-        if '표1' in name:
+        if "표1" in name or ("1" in name and "표" in name):
             update_table1(wb[name], t1)
             break
     for name in names:
-        if '표2' in name:
+        if "표2" in name or ("2" in name and "표" in name):
             update_table2(wb[name], t2)
             break
     wb.save(output_path)
@@ -811,7 +899,7 @@ def write_output(template_path, t1, t2, output_path):
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if len(sys.argv) < 2:
-        zips = [f for f in os.listdir(script_dir) if f.endswith('.zip')]
+        zips = [f for f in os.listdir(script_dir) if f.endswith(".zip")]
         if not zips:
             print("usage: python auto_report.py <zip> [output]")
             sys.exit(1)
@@ -829,7 +917,7 @@ def main():
         output_path = os.path.join(script_dir, output_path)
     data = load_all_data(zip_path)
     if output_path is None:
-        ds = data['report_date'].strftime('%Y%m%d')
+        ds = data["report_date"].strftime("%Y%m%d")
         output_path = os.path.join(script_dir, "report_{}.xlsx".format(ds))
     t1 = calculate_table1(data)
     t2 = calculate_table2(data)
