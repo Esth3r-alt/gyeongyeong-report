@@ -344,12 +344,16 @@ function dedup(rows, pidCol) {
    보고 날짜 추출 (file6 전일퇴원 날짜 + 1일)
 ================================================================ */
 function extractReportDate(file6) {
+  // 첫 번째 날짜가 아닌 최댓값 사용 (일부 행이 전전날 날짜일 수 있어 첫 번째 쓰면 -1일 오류)
+  let maxD = null;
   for (const r of file6) {
     if (r[0] == null || r[21] == null) continue;
     const d = toDate(r[21]);
-    if (d && d.getFullYear() > 2020 && d.getFullYear() < 9999)
-      return new Date(d.getTime() + 86400000);
+    if (d && d.getFullYear() > 2020 && d.getFullYear() < 9999) {
+      if (!maxD || d.getTime() > maxD.getTime()) maxD = d;
+    }
   }
+  if (maxD) return new Date(maxD.getTime() + 86400000);
   return new Date();
 }
 
@@ -450,12 +454,7 @@ function calcMetrics(data) {
     }
   }
 
-  /* 11. 표2용: 의사별·병동별 집계 */
-  const WARD_TO_COL = {
-    '18층1병동':'18층1병동','18층2병동':'18층2병동','19층1병동':'19층1병동','19층2병동':'19층2병동',
-    '20층1병동':'20층1병동','20층2병동':'20층2병동','21층1병동':'21층1병동','21층2병동':'21층2병동',
-    '혈액계중환자실':'혈액계중환자실','7A중환자실':'7층중환자실A','7B중환자실':'7층중환자실B',
-  };
+  /* 11. 표2용: 의사별·병동별 집계 — WARD_TO_COL_GLOBAL 사용 (13층·15층 등 누락 방지) */
   const docWard = {};
   const pidToDoc = {};
   for (const r of file1) {
@@ -464,7 +463,7 @@ function calcMetrics(data) {
   for (const r of file1) {
     if (!r[0]) continue;
     const doc = s(r[11]), ward = s(r[12]);
-    const col = WARD_TO_COL[ward];
+    const col = WARD_TO_COL_GLOBAL[ward];
     if (doc && col) {
       if (!docWard[doc]) docWard[doc] = {};
       docWard[doc][col] = (docWard[doc][col]||0) + 1;
@@ -727,10 +726,19 @@ async function processFiles(files) {
     LOG.unshift(`날짜: ${fmtDate(data.reportDate)}`);
     LOG.unshift(summary);
 
-    document.getElementById('logBox').innerHTML = LOG.map(l=>`<div>${l}</div>`).join('');
-
     const m = calcMetrics(data);
     GLOBAL = { data, metrics: m };
+
+    // 무균 세부 디버그 (LOG 표시 전에 추가)
+    const s192 = data.file2.filter(r => r[0]!=null && s(r[12])==='19층2병동').length;
+    const s202 = data.file2.filter(r => r[0]!=null && s(r[12])==='20층2병동' && roomNum(r[13])>=207 && roomNum(r[13])<=214).length;
+    LOG.push(`[DEBUG 무균] 19층2병동:${s192} + 20층2병동(207-214):${s202} = ${s192+s202}`);
+    LOG.push(`[DEBUG file2] 병동별: ` + [...new Set(data.file2.filter(r=>r[0]!=null&&r[12]).map(r=>s(r[12])))].join(', '));
+    // 퇴원일자 디버그
+    const f6dates = [...new Set(data.file6.filter(r=>r[0]!=null&&r[21]!=null).map(r=>{ const d=toDate(r[21]); return d?fmtDs(d):'?'; }))];
+    LOG.push(`[DEBUG 날짜] file6 퇴원일자: ${f6dates.join(', ')} → reportDate: ${fmtDs(data.reportDate)}`);
+
+    document.getElementById('logBox').innerHTML = LOG.map(l=>`<div>${l}</div>`).join('');
     render(m, data.reportDate);
     showStatus('ok', `처리 완료 — 전체 ${m.total}명 | 이식 ${m.transplant} | 무균 ${m.sterile} | ER ${m.er}명`);
   } catch (err) {
