@@ -343,17 +343,37 @@ function dedup(rows, pidCol) {
 /* ================================================================
    보고 날짜 추출 (file6 전일퇴원 날짜 + 1일)
 ================================================================ */
-function extractReportDate(file6) {
-  // 첫 번째 날짜가 아닌 최댓값 사용 (일부 행이 전전날 날짜일 수 있어 첫 번째 쓰면 -1일 오류)
-  let maxD = null;
+function extractReportDate(file5, file6) {
+  // 1단계: file6 퇴원일자 최댓값
+  let f6max = null;
   for (const r of file6) {
     if (r[0] == null || r[21] == null) continue;
     const d = toDate(r[21]);
     if (d && d.getFullYear() > 2020 && d.getFullYear() < 9999) {
-      if (!maxD || d.getTime() > maxD.getTime()) maxD = d;
+      if (!f6max || d.getTime() > f6max.getTime()) f6max = d;
     }
   }
-  if (maxD) return new Date(maxD.getTime() + 86400000);
+
+  // 2단계: file5(전일입원) 전체 셀에서 f6max 이후 1~3일 내 날짜 탐색
+  // → 전일입원 입원일이 전일퇴원 퇴원일보다 최대 3일 늦으면 그게 실제 전일
+  if (f6max) {
+    let f5best = null;
+    for (const r of file5) {
+      if (r[0] == null) continue;
+      for (const v of r) {
+        const d = toDate(v);
+        if (!d) continue;
+        const diff = d.getTime() - f6max.getTime();
+        if (diff > 0 && diff <= 3 * 86400000) {
+          if (!f5best || d.getTime() > f5best.getTime()) f5best = d;
+        }
+      }
+    }
+    if (f5best) return new Date(f5best.getTime() + 86400000);
+  }
+
+  // 3단계: file5에서 못 찾으면 file6 기준 +1일
+  if (f6max) return new Date(f6max.getTime() + 86400000);
   return new Date();
 }
 
@@ -719,7 +739,7 @@ async function processFiles(files) {
     data.file5 = dedup(data.file5, 1);
     data.file6 = dedup(data.file6, 2);
 
-    data.reportDate = extractReportDate(data.file6);
+    data.reportDate = extractReportDate(data.file5, data.file6);
 
     const summary = ['file1','file2','file3','file4','file5','file6','file7','file8']
       .map(k=>`${k}:${data[k].length}행`).join(' / ');
