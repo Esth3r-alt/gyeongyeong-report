@@ -365,7 +365,7 @@ function extractReportDate(file5, file6) {
         if (!d) continue;
         const diff = d.getTime() - f6max.getTime();
         if (diff > 0 && diff <= 3 * 86400000) {
-          if (!f5best || d.getTime() > f5best.getTime()) f5best = d;
+          if (!f5best || d.getTime() < f5best.getTime()) f5best = d; // MIN: 입원일이 가장 이른 날짜
         }
       }
     }
