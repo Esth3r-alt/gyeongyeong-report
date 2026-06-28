@@ -366,24 +366,26 @@ function calcMetrics(data) {
     || (s(r[10]) === '소아청소년과' && PEDS_DOCS.has(s(r[11])))
   )).length;
 
-  /* 2. 이식병실 (file2 병동별재원) */
+  /* 2. 이식병실 (file2 병동별재원) — 설명.xlsx 정의 기준 */
+  // 201병동(전체) + 202병동(1-6호) + 19층1병동(115,116호)
   const transplant = file2.filter(r => r[0] != null && (
-    (s(r[12]) === '20층1병동' && roomNum(r[13]) !== 108)
+    s(r[12]) === '20층1병동'
     || (s(r[12]) === '20층2병동' && roomNum(r[13]) >= 201 && roomNum(r[13]) <= 206)
     || (s(r[12]) === '19층1병동' && [115,116].includes(roomNum(r[13])))
   )).length;
 
-  /* 3. 무균병실 (file2) */
+  /* 3. 무균병실 (file2) — 설명.xlsx 정의 기준 */
+  // 192병동(전체) + 202병동(207-214호)
   const sterile = file2.filter(r => r[0] != null && (
-    (s(r[12]) === '19층2병동' && ![204,205,206].includes(roomNum(r[13])))
+    s(r[12]) === '19층2병동'
     || (s(r[12]) === '20층2병동' && roomNum(r[13]) >= 207 && roomNum(r[13]) <= 214)
   )).length;
 
-  /* 4. 전용 일반병실 (file2) */
+  /* 4. 전용 일반병실 (file2) — 설명.xlsx 정의 기준 */
+  // 181 + 182 + hicu + 191(8,9,10,15,16 제외)
   const genDed = file2.filter(r => r[0] != null && (
     ['18층1병동','18층2병동','혈액계중환자실'].includes(s(r[12]))
     || (s(r[12]) === '19층1병동' && ![108,109,110,115,116].includes(roomNum(r[13])) && !isRI(r[13]))
-    || (s(r[12]) === '19층2병동' && [205,206].includes(roomNum(r[13])))
   )).length;
 
   const dedicated = transplant + sterile + genDed;

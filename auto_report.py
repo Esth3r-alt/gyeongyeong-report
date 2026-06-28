@@ -412,33 +412,28 @@ def calculate_table1(data):
     ))
 
     # ── 2. 이식/무균/일반 (file2 병동별조회, 병실번호 기준) ──────────────────
-    # 이식병실: 20층1병동(108호 RI 제외) + 20층2병동(201-206) + 19층1병동(115,116)
+    # 이식병실: 201병동(전체) + 202병동(1-6호) + 19층1병동(115,116) — 설명.xlsx 정의 기준
     transplant = sum(1 for r in data['file2'] if r[0] and (
-        (str(r[12]).strip() == '20층1병동' and rnum(r[13]) != 108)
+        str(r[12]).strip() == '20층1병동'
         or (str(r[12]).strip() == '20층2병동'
             and rnum(r[13]) is not None and 201 <= rnum(r[13]) <= 206)
         or (str(r[12]).strip() == '19층1병동'
             and rnum(r[13]) in (115, 116))
     ))
 
-    # 무균병실: 19층2병동(204,205,206 RI 제외) + 20층2병동(207-214)
+    # 무균병실: 192병동(전체) + 202병동(207-214호) — 설명.xlsx 정의 기준
     sterile = sum(1 for r in data['file2'] if r[0] and (
-        (str(r[12]).strip() == '19층2병동'
-         and rnum(r[13]) not in (204, 205, 206))
+        str(r[12]).strip() == '19층2병동'
         or (str(r[12]).strip() == '20층2병동'
             and rnum(r[13]) is not None and 207 <= rnum(r[13]) <= 214)
     ))
 
-    # 1)전용 일반병상: 18층1병동, 18층2병동, hicu,
-    #   19층1병동(excl 108,109,110,115,116,ri방),
-    #   19층2병동 205,206호 (RI 제외된 비무균 전용일반)
+    # 1)전용 일반병상: 181 + 182 + hicu + 191(8,9,10,15,16 제외) — 설명.xlsx 정의 기준
     gen_ded = sum(1 for r in data['file2'] if r[0] and (
         str(r[12]).strip() in ('18층1병동', '18층2병동', '혈액계중환자실')
         or (str(r[12]).strip() == '19층1병동'
             and rnum(r[13]) not in (108, 109, 110, 115, 116)
             and not is_ri(r[13]))
-        or (str(r[12]).strip() == '19층2병동'
-            and rnum(r[13]) in (205, 206))
     ))
 
     dedicated = transplant + sterile + gen_ded
