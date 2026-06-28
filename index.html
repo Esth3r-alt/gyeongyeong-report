@@ -853,8 +853,8 @@ function updateSheet1(ws, m, rd) {
     const vA = s(row.getCell(1).value);
     const vB = s(row.getCell(2).value);
 
-    if (vA.includes('이식')) txSec = true;
-    if (vA.includes('무균')) stSec = true;
+    if (vA.includes('이식')) { txSec = true; stSec = false; }
+    if (vA.includes('무균')) { stSec = true; txSec = false; }
     if (vA === '응급실' || vA.includes('기타')) { txSec=false; stSec=false; }
 
     if (vA === '응급실' && vB === '응급실') { exSetVal(ws, r, 3, m.er); return; }
