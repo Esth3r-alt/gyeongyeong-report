@@ -436,7 +436,14 @@ def calculate_table1(data):
             and not is_ri(r[13]))
     ))
 
-    dedicated = transplant + sterile + gen_ded
+    # 전용병상 입원환자 수 — 설명.xlsx 정의: 201+202+181+182+hicu+191(108,109,110,ri 제외)
+    # transplant+sterile+gen_ded 합산이 아닌 file2에서 직접 계산
+    dedicated = sum(1 for r in data['file2'] if r[0] and (
+        str(r[12]).strip() in ('20층1병동', '20층2병동', '18층1병동', '18층2병동', '혈액계중환자실')
+        or (str(r[12]).strip() == '19층1병동'
+            and rnum(r[13]) not in (108, 109, 110)
+            and not is_ri(r[13]))
+    ))
     general   = total - transplant - sterile
     gen_non   = general - gen_ded
 
