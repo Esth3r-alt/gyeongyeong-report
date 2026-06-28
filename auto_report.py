@@ -467,13 +467,17 @@ def calculate_table1(data):
                    if r[0] and len(r) > 11 and str(r[11]).strip() in SEOUL_INPATIENT_WARDS)
 
     # ── 6. 전일퇴원 (file6+file7, 설명 기준) ────────────────────────────────
-    # file6: 혈액내과(전체) + 감염내과(전체) + 소아청소년과(특정의사)
+    # file6: 혈액내과(전체) + 감염내과(INFEC_DOCS) + 소아청소년과(PEDS_DOCS)
     # file7: 혈액내과 중 내원일이 전일인 환자
     prev_date = (rd - timedelta(days=1)).date() if hasattr(rd, 'date') else None
 
     prev_dis = (
         sum(1 for r in data['file6']
-            if r[0] and len(r) > 10 and str(r[10]).strip() in ('혈액내과', '감염내과'))
+            if r[0] and len(r) > 10 and str(r[10]).strip() == '혈액내과')
+        + sum(1 for r in data['file6']
+              if r[0] and len(r) > 11
+              and str(r[10]).strip() == '감염내과'
+              and str(r[11]).strip() in INFEC_DOCS_SEOUL)
         + sum(1 for r in data['file6']
               if r[0] and len(r) > 11
               and str(r[10]).strip() == '소아청소년과'

@@ -388,12 +388,8 @@ function calcMetrics(data) {
     || (s(r[12]) === '19층1병동' && ![108,109,110,115,116].includes(roomNum(r[13])) && !isRI(r[13]))
   )).length;
 
-  // 전용병상 입원환자 수 — 설명.xlsx 정의: 201+202+181+182+hicu+191(108,109,110,ri 제외)
-  // transplant+sterile+genDed 합산이 아닌 file2에서 직접 계산
-  const dedicated = file2.filter(r => r[0] != null && (
-    ['20층1병동','20층2병동','18층1병동','18층2병동','혈액계중환자실'].includes(s(r[12]))
-    || (s(r[12]) === '19층1병동' && ![108,109,110].includes(roomNum(r[13])) && !isRI(r[13]))
-  )).length;
+  // 전용병상 입원환자 수 — 교수님 확인 전까지 transplant+sterile+genDed 합산 유지
+  const dedicated = transplant + sterile + genDed;
   const general   = total - transplant - sterile;
   const genNon    = general - genDed;
 
@@ -413,7 +409,8 @@ function calcMetrics(data) {
   /* 8. 전일퇴원 (file6 + file7) */
   const prevDate = reportDate ? new Date(reportDate.getTime() - 86400000) : null;
   const prevDis =
-    file6.filter(r => r[0] != null && r.length > 10 && ['혈액내과','감염내과'].includes(s(r[10]))).length
+    file6.filter(r => r[0] != null && r.length > 10 && s(r[10]) === '혈액내과').length
+    + file6.filter(r => r[0] != null && r.length > 11 && s(r[10]) === '감염내과' && INFEC_DOCS.has(s(r[11]))).length
     + file6.filter(r => r[0] != null && r.length > 11 && s(r[10]) === '소아청소년과' && PEDS_DOCS.has(s(r[11]))).length
     + file7.filter(r => {
       if (!r[0] || r.length <= 19 || s(r[13]) !== '혈액내과') return false;
