@@ -343,8 +343,8 @@ function dedup(rows, pidCol) {
 /* ================================================================
    보고 날짜 추출 (file6 전일퇴원 날짜 + 1일)
 ================================================================ */
-function extractReportDate(file5, file6) {
-  // 1단계: file6 퇴원일자 최댓값
+function extractReportDate(file6, file8) {
+  // 1단계: file6 퇴원일자 최댓값 (기준점)
   let f6max = null;
   for (const r of file6) {
     if (r[0] == null || r[21] == null) continue;
@@ -354,25 +354,29 @@ function extractReportDate(file5, file6) {
     }
   }
 
-  // 2단계: file5(전일입원) 전체 셀에서 f6max 이후 1~3일 내 날짜 탐색
-  // → 전일입원 입원일이 전일퇴원 퇴원일보다 최대 3일 늦으면 그게 실제 전일
+  // 2단계: file8(이식 스케줄)에서 f6max 이후 7일 이내 날짜 최빈값 → 보고날짜
   if (f6max) {
-    let f5best = null;
-    for (const r of file5) {
-      if (r[0] == null) continue;
+    const counts = {};
+    for (const r of file8) {
       for (const v of r) {
         const d = toDate(v);
         if (!d) continue;
         const diff = d.getTime() - f6max.getTime();
-        if (diff > 0 && diff <= 3 * 86400000) {
-          if (!f5best || d.getTime() < f5best.getTime()) f5best = d; // MIN: 입원일이 가장 이른 날짜
+        if (diff > 0 && diff <= 7 * 86400000) {
+          const k = fmtDs(d);
+          counts[k] = (counts[k] || 0) + 1;
         }
       }
     }
-    if (f5best) return new Date(f5best.getTime() + 86400000);
+    if (Object.keys(counts).length > 0) {
+      // 최빈값, 동점이면 최솟값(가장 이른 날짜)
+      const best = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+      return new Date(`${best.slice(0,4)}-${best.slice(4,6)}-${best.slice(6,8)}`);
+    }
   }
 
-  // 3단계: file5에서 못 찾으면 file6 기준 +1일
+  // 3단계: fallback — file6 기준 +1일
   if (f6max) return new Date(f6max.getTime() + 86400000);
   return new Date();
 }
@@ -739,7 +743,7 @@ async function processFiles(files) {
     data.file5 = dedup(data.file5, 1);
     data.file6 = dedup(data.file6, 2);
 
-    data.reportDate = extractReportDate(data.file5, data.file6);
+    data.reportDate = extractReportDate(data.file6, data.file8);
 
     const summary = ['file1','file2','file3','file4','file5','file6','file7','file8']
       .map(k=>`${k}:${data[k].length}행`).join(' / ');
