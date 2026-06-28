@@ -788,6 +788,11 @@ function exSetVal(ws, rowNum, colNum, v) {
 }
 
 function updateSheet1(ws, m, rd) {
+  // 열 너비 명시 설정 (텍스트 잘림 방지)
+  ws.getColumn(1).width = 13;  // A: 섹션 레이블
+  ws.getColumn(2).width = 33;  // B: 행 레이블 (긴 텍스트 포함)
+  ws.getColumn(3).width = 13;  // C: 값
+
   const LABELS = {
     '전체 입원환자 수':           m.total,
     '전용대비 입원환자 가동율(%)': m.total_rate,
@@ -827,6 +832,17 @@ function updateSheet1(ws, m, rd) {
 }
 
 function updateSheet2(ws, m) {
+  // 열 너비 최소값 보장 (### 방지)
+  ws.getColumn(3).width = 9;   // GW+ICU (기본 5.0 → 확장)
+  ws.getColumn(4).width = 8;   // GW
+  ws.getColumn(5).width = 8;   // ICU
+  for (let c = 6; c <= 41; c++) {  // 병동 컬럼 (18층1병동 ~ 외과중환자실)
+    const col = ws.getColumn(c);
+    if (!col.width || col.width < 7) col.width = 7;
+  }
+  // AP(42)는 스페이서 열 - 유지
+  ws.getColumn(44).width = 9;  // 환자 수
+
   // 헤더 행 찾기 (주치의 포함 행) — colIdx는 1-indexed
   let hdrRow = 1, colIdx = {};
   ws.eachRow((row, r) => {
