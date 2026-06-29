@@ -140,9 +140,44 @@ body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--b
   .section.closed .sec-body{display:block!important}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+/* ── Password overlay ── */
+#pwOverlay{position:fixed;inset:0;background:var(--bg);z-index:9999;
+  display:flex;align-items:center;justify-content:center}
+.pw-box{background:var(--surface);border-radius:12px;box-shadow:var(--shadow);
+  padding:40px 36px;width:320px;text-align:center}
+.pw-logo{width:44px;height:44px;background:var(--primary);border-radius:10px;
+  display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+.pw-title{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:4px}
+.pw-sub{font-size:12px;color:var(--text-muted);margin-bottom:24px}
+.pw-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:6px;
+  font-family:var(--font);font-size:15px;text-align:center;letter-spacing:4px;
+  outline:none;transition:border-color .2s}
+.pw-input:focus{border-color:var(--primary-mid)}
+.pw-btn{margin-top:12px;width:100%;padding:11px;background:var(--primary);color:#fff;
+  border:none;border-radius:6px;font-family:var(--font);font-size:14px;font-weight:600;
+  cursor:pointer;transition:background .2s}
+.pw-btn:hover{background:var(--primary-mid)}
+.pw-err{margin-top:10px;font-size:12px;color:var(--negative);min-height:16px}
 </style>
 </head>
 <body>
+
+<!-- 비밀번호 화면 -->
+<div id="pwOverlay">
+  <div class="pw-box">
+    <div class="pw-logo">
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    </div>
+    <div class="pw-title">경영팀 일일현황</div>
+    <div class="pw-sub">서울성모병원 가톨릭혈액병원 · 접근 제한 페이지</div>
+    <input class="pw-input" id="pwInput" type="password" placeholder="비밀번호 입력" maxlength="20">
+    <button class="pw-btn" id="pwBtn">확인</button>
+    <div class="pw-err" id="pwErr"></div>
+  </div>
+</div>
 
 <header class="hdr">
   <div class="hdr-left">
@@ -226,6 +261,31 @@ body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--b
 /* ================================================================
    상수 (설명.xlsx 정의 기준)
 ================================================================ */
+/* ── 비밀번호 ── */
+(function() {
+  const PW = '8520';
+  const overlay = document.getElementById('pwOverlay');
+  const input   = document.getElementById('pwInput');
+  const btn     = document.getElementById('pwBtn');
+  const err     = document.getElementById('pwErr');
+
+  if (sessionStorage.getItem('auth') === 'ok') { overlay.remove(); return; }
+
+  function tryLogin() {
+    if (input.value === PW) {
+      sessionStorage.setItem('auth', 'ok');
+      overlay.remove();
+    } else {
+      err.textContent = '비밀번호가 맞지 않습니다.';
+      input.value = '';
+      input.focus();
+    }
+  }
+  btn.addEventListener('click', tryLogin);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+  input.focus();
+})();
+
 const INFEC_DOCS   = new Set(['이동건','노덕희','이래석','조성연','홍한터']);
 const PEDS_DOCS    = new Set(['조빈','정낙균','이재욱','유재원','조수정']);
 const SEOUL_WARDS  = new Set([
